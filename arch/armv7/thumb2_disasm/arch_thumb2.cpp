@@ -92,7 +92,7 @@ class Thumb2Architecture: public ArmCommonArchitecture
 protected:
 	virtual std::string GetAssemblerTriple() override
 	{
-		if(m_endian == BigEndian)
+		if(m_dis_endian == BigEndian)
 			return "thumbv7eb-none-none";
 
 		return "thumbv7-none-none";
@@ -103,7 +103,7 @@ protected:
 	{
 		req->instr_word16 = 0;
 		req->instr_word32 = 0;
-		if(m_endian == LittleEndian) {
+		if(m_dis_endian == LittleEndian) {
 			req->instr_word16 = *(uint16_t *)data;
 			if(len >= 4) {
 				req->instr_word32 = ((*(uint16_t *)data)<<16) | *(uint16_t *)(data + 2);
@@ -138,9 +138,11 @@ protected:
 	}
 
 public:
+	BNEndianness m_dis_endian;
 	/* initialization list */
-	Thumb2Architecture(const char* name, BNEndianness endian): ArmCommonArchitecture(name, endian)
+	Thumb2Architecture(const char* name, BNEndianness endian, BNEndianness dis_endian): ArmCommonArchitecture(name, endian)
 	{
+		m_dis_endian = dis_endian;
 	}
 
 	/*************************************************************************/
@@ -1949,7 +1951,7 @@ public:
 	}
 };
 
-ArmCommonArchitecture* InitThumb2Architecture(const char* name, BNEndianness endian)
+ArmCommonArchitecture* InitThumb2Architecture(const char* name, BNEndianness endian, BNEndianness dis_endian)
 {
-	return new Thumb2Architecture(name, endian);
+	return new Thumb2Architecture(name, endian, dis_endian);
 }

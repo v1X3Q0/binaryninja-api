@@ -40,4 +40,4 @@ public:
 		std::string& errors) override;
 };
 
-ArmCommonArchitecture* InitThumb2Architecture(const char* name, BNEndianness endian);
+ArmCommonArchitecture* InitThumb2Architecture(const char* name, BNEndianness endian, BNEndianness dis_endian);

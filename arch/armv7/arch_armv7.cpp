@@ -30,6 +30,14 @@ using namespace std;
 
 #define HANDLE_CASE(orig, opposite) case orig: case opposite: return (candidate == orig) || (candidate == opposite)
 
+uint32_t bswap32(uint32_t x)
+{
+	return ((x & 0xff000000) >> 24) |
+	       ((x & 0x00ff0000) >> 8) |
+	       ((x & 0x0000ff00) << 8) |
+	       ((x & 0x000000ff) << 24);
+}
+
 static bool IsRelatedCondition(Condition orig, Condition candidate)
 {
 	switch (orig)
@@ -665,7 +673,7 @@ class Armv7Architecture: public ArmCommonArchitecture
 protected:
 	virtual std::string GetAssemblerTriple() override
 	{
-		if(m_endian == BigEndian)
+		if(m_dis_endian == BigEndian)
 			return "armv7eb-none-none";
 
 		return "armv7-none-none";
@@ -675,8 +683,10 @@ protected:
 	{
 		(void)addr;
 		(void)maxLen;
+		uint32_t datacur = *(uint32_t*)data;
 		memset(&result, 0, sizeof(result));
-		if (armv7_decompose(*(uint32_t*)data, &result, (uint32_t)addr, (uint32_t)(m_endian == BigEndian)) != 0)
+		// LogWarn("DECOMPOSING: BE == %d, 0x%08x %" PRIx32 "\n", m_dis_endian == BigEndian, (uint32_t)addr, *(uint32_t*)data);
+		if (armv7_decompose(datacur, &result, (uint32_t)addr, (uint32_t)(m_dis_endian == BigEndian)) != 0)
 			return false;
 		return true;
 	}
@@ -1077,9 +1087,12 @@ protected:
 	}
 
 public:
-	Armv7Architecture(const char* arch, BNEndianness endian)
+	BNEndianness m_dis_endian;
+
+	Armv7Architecture(const char* arch, BNEndianness endian, BNEndianness dis_endian)
 		: ArmCommonArchitecture(arch, endian)
 	{
+		m_dis_endian = dis_endian;
 	}
 
 	virtual size_t GetInstructionAlignment() const override
@@ -1389,9 +1402,9 @@ public:
 			}
 		}
 		}
-		catch (exception& e)
+		catch (exception&)
 		{
-			LogWarnForException(e, "Failed to disassemble instruction with encoding: %" PRIx32 "\n", *(uint32_t*)data);
+			LogWarn("Failed to disassemble instruction with encoding: %" PRIx32 "\n", *(uint32_t*)data);
 		}
 		return true;
 	}
@@ -2244,15 +2257,6 @@ public:
 		return false;
 	}
 };
-
-
-uint32_t bswap32(uint32_t x)
-{
-	return ((x & 0xff000000) >> 24) |
-	       ((x & 0x00ff0000) >> 8) |
-	       ((x & 0x0000ff00) << 8) |
-	       ((x & 0x000000ff) << 24);
-}
 
 class ArmElfRelocationHandler: public RelocationHandler
 {
@@ -3235,10 +3239,10 @@ public:
 };
 
 
-static void RegisterArmArchitecture(const char* armName, const char* thumbName, BNEndianness endian)
+static void RegisterArmArchitecture(const char* armName, const char* thumbName, BNEndianness endian, BNEndianness dis_endian=(BNEndianness)-1)
 {
-	ArmCommonArchitecture* armv7 = new Armv7Architecture(armName, endian);
-	ArmCommonArchitecture* thumb2 = InitThumb2Architecture(thumbName, endian);
+	ArmCommonArchitecture* armv7 = new Armv7Architecture(armName, endian, endian);
+	ArmCommonArchitecture* thumb2 = InitThumb2Architecture(thumbName, endian, endian);
 	armv7->SetArmAndThumbArchitectures(armv7, thumb2);
 	thumb2->SetArmAndThumbArchitectures(armv7, thumb2);
 
@@ -3293,6 +3297,50 @@ static void RegisterArmArchitecture(const char* armName, const char* thumbName, 
 	thumb2->GetStandalonePlatform()->AddRelatedPlatform(armv7, armv7->GetStandalonePlatform());
 }
 
+static void RegisterChallantArmArchitecture(const char* armName, const char* thumbName, BNEndianness endian, BNEndianness dis_endian=(BNEndianness)-1)
+{
+	if (dis_endian == (BNEndianness)-1)
+	{
+		dis_endian = endian;
+	}
+
+	
+	ArmCommonArchitecture* armv7 = new Armv7Architecture(armName, endian, dis_endian);
+	ArmCommonArchitecture* thumb2 = InitThumb2Architecture(thumbName, endian, dis_endian);
+	armv7->SetArmAndThumbArchitectures(armv7, thumb2);
+	thumb2->SetArmAndThumbArchitectures(armv7, thumb2);
+
+	Architecture::Register(armv7);
+	Architecture::Register(thumb2);
+
+	// Register calling convention
+	Ref<CallingConvention> conv;
+	conv = new ArmCallingConvention(armv7);
+	armv7->RegisterCallingConvention(conv);
+	armv7->SetDefaultCallingConvention(conv);
+	armv7->SetCdeclCallingConvention(conv);
+	armv7->SetFastcallCallingConvention(conv);
+	armv7->SetStdcallCallingConvention(conv);
+
+	conv = new LinuxArmv7SystemCallConvention(armv7);
+	armv7->RegisterCallingConvention(conv);
+
+	conv = new ArmCallingConvention(thumb2);
+	thumb2->RegisterCallingConvention(conv);
+	thumb2->SetDefaultCallingConvention(conv);
+	thumb2->SetCdeclCallingConvention(conv);
+	thumb2->SetFastcallCallingConvention(conv);
+	thumb2->SetStdcallCallingConvention(conv);
+
+	conv = new LinuxArmv7SystemCallConvention(thumb2);
+	thumb2->RegisterCallingConvention(conv);
+
+	thumb2->RegisterFunctionRecognizer(new Thumb2ImportedFunctionRecognizer());
+
+	armv7->GetStandalonePlatform()->AddRelatedPlatform(thumb2, thumb2->GetStandalonePlatform());
+	thumb2->GetStandalonePlatform()->AddRelatedPlatform(armv7, armv7->GetStandalonePlatform());
+}
+
 
 extern "C"
 {
@@ -3314,6 +3362,7 @@ extern "C"
 #endif
 	{
 		RegisterArmArchitecture("armv7", "thumb2", LittleEndian);
+		RegisterChallantArmArchitecture("armv7ebl", "thumb2ebl", BigEndian, LittleEndian);
 		RegisterArmArchitecture("armv7eb", "thumb2eb", BigEndian);
 		return true;
 	}
