@@ -583,6 +583,7 @@ bool ElfView::Init()
 	vector<Elf64SectionHeader> relocSections, relocASections;
 	Elf64SectionHeader symbolTableSection;
 
+	BeginBulkAddSegments();
 	uint64_t segmentStart = 0;
 	for (size_t i = 1; i < m_elfSections.size(); i++)
 	{
@@ -700,6 +701,8 @@ bool ElfView::Init()
 				GetParentView()->AddAutoSection(sectionNames[i], m_elfSections[i].offset, m_elfSections[i].size, DefaultSectionSemantics, type, m_elfSections[i].align, m_elfSections[i].entrySize, linkedSection, infoSection, m_elfSections[i].info);
 		}
 	}
+
+	EndBulkAddSegments();
 	// Apply architecture and platform
 	if (!m_arch)
 	{
@@ -1251,6 +1254,7 @@ bool ElfView::Init()
 	}
 
 	size_t commonSegmentOffset = 0;
+	auto allSections = GetSections();
 	for (auto entry = combinedSymbolTable.begin(); entry != combinedSymbolTable.end(); entry++)
 	{
 		if (entry->section == ELF_SHN_COMMON)
@@ -1270,13 +1274,19 @@ bool ElfView::Init()
 
 			// Object files "entry.value" is section relative
 			uint64_t adjustedSectionAddr = m_elfSections[entry->section].address + imageBaseAdjustment;
-			auto secs = GetSectionsAt(adjustedSectionAddr);
-			if (secs.size() < 1)
-				continue;
-
-			entry->value += secs[0]->GetStart();
-		}
-		else
+			// Get the section who contains the adjustedSectionAddr
+			// We avoid using GetSectionAt() here as when the list of sections grows large calling this in an
+			// inner loop can be very slow.
+			for (const auto& section : allSections)
+			{
+				if (adjustedSectionAddr >= section->GetStart() &&
+					adjustedSectionAddr < section->GetEnd())
+				{
+					entry->value += section->GetStart();
+					break;
+				}
+			}
+		} else
 			entry->value += imageBaseAdjustment;
 
 		if (entry->section == ELF_SHN_UNDEF)
@@ -2732,6 +2742,8 @@ void ElfView::ParseMiniDebugInfo()
 			symbol->GetBinding()
 		);
 	}
+
+	debugBv->GetFile()->Close();
 }
 
 

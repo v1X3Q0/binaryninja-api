@@ -35,10 +35,10 @@ static uint32_t RegisterSizeFromPrefix(const char* prefix = "")
 	return 4;
 }
 
-static ExprId ReadRegister(LowLevelILFunction& il, decomp_result* instr, uint32_t reg, size_t size = 4, const char* prefix = "")
+static ExprId ReadRegister(LowLevelILFunction& il, decomp_result* instr, uint32_t reg, size_t size = 4, const char* prefix = "", uint32_t align=0)
 {
 	if (reg == armv7::REG_PC && strcmp(prefix, "") == 0)
-		return il.ConstPointer(size, instr->pc);
+		return il.ConstPointer(size, instr->pc & (align ? ~(align - 1) : ~0));
 	return il.Register(RegisterSizeFromPrefix(prefix), GetRegisterByIndex(reg, prefix));
 }
 
@@ -351,9 +351,9 @@ static ExprId ShiftedRegister(LowLevelILFunction& il, decomp_result* instr, uint
 	}
 }
 
-
+#define ReadRegisterA(il, instr, reg, align) ReadRegister(il, instr, reg, 4, "", align)
 static ExprId GetMemoryAddress(LowLevelILFunction& il, decomp_result* instr, size_t operand, uint32_t size,
-	bool canWriteback = true)
+	bool canWriteback = true, uint32_t align=0)
 {
 	uint32_t reg, second, t, n;
 	switch (instr->format->operands[operand].type)
@@ -367,19 +367,19 @@ static ExprId GetMemoryAddress(LowLevelILFunction& il, decomp_result* instr, siz
 		second = instr->fields[instr->format->operands[operand].field1];
 		if (canWriteback && HasWriteback(instr, operand))
 		{
-			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegister(il, instr, reg), il.Const(4, second))));
+			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second))));
 			return il.Register(4, reg);
 		}
-		return il.Add(4, ReadRegister(il, instr, reg), il.Const(4, second));
+		return il.Add(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second));
 	case OPERAND_FORMAT_MEMORY_ONE_REG_NEG_IMM:
 		reg = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field0]);
 		second = instr->fields[instr->format->operands[operand].field1];
 		if (canWriteback && HasWriteback(instr, operand))
 		{
-			il.AddInstruction(il.SetRegister(4, reg, il.Sub(4, ReadRegister(il, instr, reg), il.Const(4, second))));
+			il.AddInstruction(il.SetRegister(4, reg, il.Sub(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second))));
 			return il.Register(4, reg);
 		}
-		return il.Sub(4, ReadRegister(il, instr, reg), il.Const(4, second));
+		return il.Sub(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second));
 	case OPERAND_FORMAT_MEMORY_ONE_REG_ADD_IMM:
 	case OPERAND_FORMAT_MEMORY_ONE_REG_OPTIONAL_ADD_IMM:
 		reg = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field0]);
@@ -387,23 +387,23 @@ static ExprId GetMemoryAddress(LowLevelILFunction& il, decomp_result* instr, siz
 		if (canWriteback && HasWriteback(instr, operand))
 		{
 			if (instr->fields[FIELD_add])
-				il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegister(il, instr, reg), il.Const(4, second))));
+				il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second))));
 			else
-				il.AddInstruction(il.SetRegister(4, reg, il.Sub(4, ReadRegister(il, instr, reg), il.Const(4, second))));
+				il.AddInstruction(il.SetRegister(4, reg, il.Sub(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second))));
 			return il.Register(4, reg);
 		}
 		if (instr->fields[FIELD_add])
-			return il.Add(4, ReadRegister(il, instr, reg), il.Const(4, second));
-		return il.Sub(4, ReadRegister(il, instr, reg), il.Const(4, second));
+			return il.Add(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second));
+		return il.Sub(4, ReadRegisterA(il, instr, reg, align), il.Const(4, second));
 	case OPERAND_FORMAT_MEMORY_TWO_REG:
 		reg = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field0]);
 		second = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field1]);
 		if (canWriteback && HasWriteback(instr, operand))
 		{
-			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegister(il, instr, reg), il.Register(4, second))));
+			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegisterA(il, instr, reg, align), il.Register(4, second))));
 			return il.Register(4, reg);
 		}
-		return il.Add(4, ReadRegister(il, instr, reg), il.Register(4, second));
+		return il.Add(4, ReadRegisterA(il, instr, reg, align), il.Register(4, second));
 	case OPERAND_FORMAT_MEMORY_TWO_REG_SHIFT:
 		reg = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field0]);
 		second = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field1]);
@@ -411,21 +411,21 @@ static ExprId GetMemoryAddress(LowLevelILFunction& il, decomp_result* instr, siz
 		n = instr->fields[FIELD_shift_n];
 		if (canWriteback && HasWriteback(instr, operand))
 		{
-			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegister(il, instr, reg),
+			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegisterA(il, instr, reg, align),
 				ShiftedRegister(il, instr, second, t, n))));
 			return il.Register(4, reg);
 		}
-		return il.Add(4, ReadRegister(il, instr, reg), ShiftedRegister(il, instr, second, t, n));
+		return il.Add(4, ReadRegisterA(il, instr, reg, align), ShiftedRegister(il, instr, second, t, n));
 	case OPERAND_FORMAT_MEMORY_TWO_REG_LSL_ONE:
 		reg = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field0]);
 		second = GetRegisterByIndex(instr->fields[instr->format->operands[operand].field1]);
 		if (canWriteback && HasWriteback(instr, operand))
 		{
-			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegister(il, instr, reg),
+			il.AddInstruction(il.SetRegister(4, reg, il.Add(4, ReadRegisterA(il, instr, reg, align),
 				il.ShiftLeft(4, ReadRegister(il, instr, second), il.Const(4, 1)))));
 			return il.Register(4, reg);
 		}
-		return il.Add(4, ReadRegister(il, instr, reg), il.ShiftLeft(4, ReadRegister(il, instr, second), il.Const(4, 1)));
+		return il.Add(4, ReadRegisterA(il, instr, reg, align), il.ShiftLeft(4, ReadRegister(il, instr, second), il.Const(4, 1)));
 	case OPERAND_FORMAT_MEMORY_SP_IMM:
 	case OPERAND_FORMAT_MEMORY_SP_OPTIONAL_IMM:
 		second = instr->fields[instr->format->operands[operand].field0];
@@ -436,7 +436,7 @@ static ExprId GetMemoryAddress(LowLevelILFunction& il, decomp_result* instr, siz
 		}
 		return il.Add(4, il.Register(4, armv7::REG_SP), il.Const(4, second));
 	case OPERAND_FORMAT_MEMORY_PC:
-		return il.ConstPointer(4, instr->pc);
+		return il.ConstPointer(4, instr->pc & (align ? ~(align - 1) : ~0));
 	case OPERAND_FORMAT_LABEL:
 		if (instr->fields[FIELD_add])
 			return il.ConstPointer(4, ALIGN4(instr->pc) + instr->fields[FIELD_imm32]);
@@ -1821,47 +1821,130 @@ bool GetLowLevelILForNEONInstruction(Architecture* arch, LowLevelILFunction& il,
 		il.AddInstruction(WriteILOperand(il, instr, 0, ReadILOperand(il, instr, 1), GetRegisterSize(instr, 1)));
 		break;
 	case armv7::ARMV7_VCVT:
-		if (instr->format->operandCount == 3)
+		if (IS_FIELD_PRESENT(instr, FIELD_to_fixed))
 		{
-			// TODO: Fixed point unsupported.
+			if (IS_FIELD_PRESENT(instr, FIELD_imm))
+			{
+				// VCVT (between floating-point and fixed-point, Floating-point)
+				/* VCVT<c>.F32.<dt> <Sd>,<Sd>,#<imm> */
+				/* VCVT<c>.F64.<dt> <Dd>,<Dd>,#<imm> */
+				/* VCVT<c>.<dt> <Sd>,<Sd>,#<imm> */
+				/* VCVT<c>.<dt> <Dd>,<Dd>,#<imm> */
+				// TODO: fixed-point unsupported.
+				il.AddInstruction(il.Unimplemented());
+			}
+			else if (IS_FIELD_PRESENT(instr, FIELD_fbits))
+			{
+				// VCVT (between floating-point and fixed-point, Advanced SIMD)
+				/* VCVT<c>.<dt> <Dd>,<Dm>,#<fbits> */
+				/* VCVT<c>.<dt> <Qd>,<Qm>,#<fbits> */
+				// TODO: vector and fixed-point unsupported.
+			}
+		}
+		else if (IS_FIELD_PRESENT(instr, FIELD_half_to_single))
+		{
+			// VCVT (between half-precision and single-precision, Advanced SIMD)
+			/* VCVT<c>.F16.F32 <Dd>,<Qm> */
+			/* VCVT<c>.F32.F16 <Qd>,<Dm> */
+			// TODO: vector and half-precision unsupported.
 			il.AddInstruction(il.Unimplemented());
 		}
-		else if (instr->format->operationFlags & (INSTR_FORMAT_FLAG_F32 | INSTR_FORMAT_FLAG_F64))
+		else if (IS_FIELD_PRESENT(instr, FIELD_double_to_single))
 		{
-			il.AddInstruction(
-				WriteILOperand(il, instr, 0, il.FloatConvert(GetRegisterSize(instr, 1), ReadILOperand(il, instr, 1))));
+			// VCVT (between double-precision and single-precision)
+			/* VCVT<c>.F64.F32 <Dd>,<Sm> */
+			/* VCVT<c>.F32.F64 <Sd>,<Dm> */
+			il.AddInstruction(WriteILOperand(
+				il, instr, 0, il.FloatConvert(GetRegisterSize(instr, 1), ReadILOperand(il, instr, 1))));
+			break;
 		}
-		else if (IS_FIELD_PRESENT(instr, FIELD_td))
+		else if (IS_FIELD_PRESENT(instr, FIELD_to_integer))
 		{
-			switch (instr->fields[FIELD_dt])
+			if (IS_FIELD_PRESENT(instr, FIELD_td))
 			{
-			case VFP_DATA_SIZE_S32F32:
-			case VFP_DATA_SIZE_U32F32:
-				il.AddInstruction(WriteILOperand(
-					il, instr, 0, il.IntToFloat(GetRegisterSize(instr, 1), ReadILOperand(il, instr, 1))));
-				break;
-			case VFP_DATA_SIZE_F32S32:
-			case VFP_DATA_SIZE_F32U32:
-				il.AddInstruction(WriteILOperand(
-					il, instr, 0, il.FloatToInt(GetRegisterSize(instr, 1), ReadILOperand(il, instr, 1))));
-				break;
-			default:
-				il.AddInstruction(il.Unimplemented());
+				// VCVT (between floating-point and integer, Advanced SIMD)
+				/* VCVT<c>.<dt> <Dd>,<Dm> */  // instr->fields[FIELD_regs] = 1
+				/* VCVT<c>.<dt> <Qd>,<Qm> */  // instr->fields[FIELD_regs] = 2
+				switch (instr->fields[FIELD_dt])
+				{
+				case VFP_DATA_SIZE_S32F32:
+				case VFP_DATA_SIZE_U32F32:
+					// TODO: iterate over vector components
+					// break;
+				case VFP_DATA_SIZE_F32S32:
+				case VFP_DATA_SIZE_F32U32:
+					// TODO: iterate over vector components
+					// break;
+				default:
+					// Invalid
+					il.AddInstruction(il.Unimplemented());
+				}
+			}
+			else if (instr->fields[FIELD_to_integer])
+			{
+				// VCVT, VCVTR (between floating-point and integer, Floating-point)
+				// TODO: handle distinction of VCVTR:
+				// If R is specified, the operation uses the rounding mode specified by the FPSCR.
+				// If R is omitted. the operation uses the Round towards Zero rounding mode.
+				// (Note: Binary Ninja does not currently support specifying any particular rounding mode, so it doesn't matter.)
+				switch (instr->fields[FIELD_dt])
+				{
+				case VFP_DATA_SIZE_S32F32:
+				case VFP_DATA_SIZE_S32F64:
+					/* VCVT<c>.S32.F32 <Sd>,<Sm> */
+					/* VCVT<c>.S32.F64 <Sd>,<Dm> */
+					/* VCVTR<c>.S32.F32 <Sd>,<Sm> */
+					/* VCVTR<c>.S32.F64 <Sd>,<Dm> */
+					il.AddInstruction(WriteILOperand(
+						il, instr, 0, il.SignExtend(GetRegisterSize(instr, 0),
+							il.FloatToInt(GetRegisterSize(instr, 0),
+								il.RoundToInt(GetRegisterSize(instr, 0),
+									ReadILOperand(il, instr, 1))))));
+					break;
+				case VFP_DATA_SIZE_U32F32:
+				case VFP_DATA_SIZE_U32F64:
+					/* VCVT<c>.U32.F32 <Sd>,<Sm> */
+					/* VCVT<c>.U32.F64 <Sd>,<Dm> */
+					/* VCVTR<c>.U32.F32 <Sd>,<Sm> */
+					/* VCVTR<c>.U32.F64 <Sd>,<Dm> */
+					il.AddInstruction(WriteILOperand(
+						il, instr, 0, il.ZeroExtend(GetRegisterSize(instr, 0),
+							il.FloatToInt(GetRegisterSize(instr, 0),
+								il.RoundToInt(GetRegisterSize(instr, 0),
+									ReadILOperand(il, instr, 1))))));
+					break;
+				default:
+					// Invalid
+					il.AddInstruction(il.Unimplemented());
+				}
+			}
+			else
+			{
+				// VCVT, VCVTR (between floating-point and integer, Floating-point)
+				switch (instr->fields[FIELD_dt])
+				{
+				case VFP_DATA_SIZE_S32:
+					/* VCVT<c>.F32.<dt> <Sd>,<Sm> */
+					il.AddInstruction(WriteILOperand(
+						il, instr, 0, il.IntToFloat(GetRegisterSize(instr, 0),
+							il.SignExtend(GetRegisterSize(instr, 0),
+								ReadILOperand(il, instr, 1)))));
+					break;
+				case VFP_DATA_SIZE_U32:
+					/* VCVT<c>.F64.<dt> <Dd>,<Sm> */
+					il.AddInstruction(WriteILOperand(
+						il, instr, 0, il.IntToFloat(GetRegisterSize(instr, 0),
+							il.ZeroExtend(GetRegisterSize(instr, 0),
+								ReadILOperand(il, instr, 1)))));
+					break;
+				default:
+					// Invalid
+					il.AddInstruction(il.Unimplemented());
+				}
 			}
 		}
 		else
-		{
-			switch (instr->fields[FIELD_dt])
-			{
-			case VFP_DATA_SIZE_F32:
-			case VFP_DATA_SIZE_S32:
-				il.AddInstruction(WriteILOperand(
-					il, instr, 0, il.FloatConvert(GetRegisterSize(instr, 1), ReadILOperand(il, instr, 1))));
-				break;
-			default:
-				il.AddInstruction(il.Unimplemented());
-			}
-		}
+			il.AddInstruction(il.Unimplemented());
 		break;
 	case armv7::ARMV7_VMOV:
 		if (instr->format->operandCount == 4)
@@ -2053,7 +2136,9 @@ bool GetLowLevelILForNEONInstruction(Architecture* arch, LowLevelILFunction& il,
 		}
 		else
 		{
-			il.AddInstruction(WriteILOperand(il, instr, 0, il.Load(regSize, GetMemoryAddress(il, instr, 1, 4))));
+			il.AddInstruction(WriteILOperand(il, instr, 0,
+				il.Load(regSize,
+					GetMemoryAddress(il, instr, 1, 4, true, 4))));
 		}
 		break;
 	}

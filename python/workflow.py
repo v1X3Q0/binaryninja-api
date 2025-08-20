@@ -27,7 +27,7 @@ from typing import List, Union, Callable, Optional, Any
 
 # Binary Ninja components
 import binaryninja
-from .log import log_error
+from .log import log_error_for_exception
 from . import _binaryninjacore as core
 from .flowgraph import FlowGraph, CoreFlowGraph
 
@@ -224,7 +224,7 @@ class Activity(object):
 			if self.action is not None:
 				self.action(AnalysisContext(ac))
 		except:
-			log_error(traceback.format_exc())
+			log_error_for_exception("Unhandled Python exception in Activity._action")
 
 	def __del__(self):
 		if core is not None:
@@ -288,7 +288,7 @@ class _WorkflowMetaclass(type):
 
 	def __getitem__(self, value):
 		binaryninja._init_plugins()
-		workflow = core.BNWorkflowInstance(str(value))
+		workflow = core.BNWorkflowGetOrCreate(str(value))
 		return Workflow(handle=workflow)
 
 
@@ -344,7 +344,7 @@ class Workflow(metaclass=_WorkflowMetaclass):
 	def __init__(self, name: str = "", handle: core.BNWorkflowHandle = None, query_registry: bool = True, object_handle: Union[core.BNFunctionHandle, core.BNBinaryViewHandle] = None):
 		if handle is None:
 			if query_registry:
-				_handle = core.BNWorkflowInstance(str(name))
+				_handle = core.BNWorkflowGetOrCreate(str(name))
 			else:
 				_handle = core.BNCreateWorkflow(name)
 		else:

@@ -3,9 +3,7 @@ use crate::cache::{
     cached_function_guid, insert_cached_function_match, try_cached_function_guid,
     try_cached_function_match,
 };
-use crate::convert::{
-    comment_to_bn_comment, platform_to_target, to_bn_symbol_at_address, to_bn_type,
-};
+use crate::convert::{platform_to_target, to_bn_type};
 use crate::matcher::{Matcher, MatcherSettings};
 use crate::{get_warp_tag_type, relocatable_regions};
 use binaryninja::architecture::RegisterId;
@@ -13,7 +11,7 @@ use binaryninja::background_task::BackgroundTask;
 use binaryninja::binary_view::{BinaryView, BinaryViewExt};
 use binaryninja::command::Command;
 use binaryninja::settings::{QueryOptions, Settings};
-use binaryninja::workflow::{Activity, AnalysisContext, Workflow};
+use binaryninja::workflow::{activity, Activity, AnalysisContext, Workflow, WorkflowBuilder};
 use itertools::Itertools;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -21,41 +19,7 @@ use warp::r#type::class::function::{Location, RegisterLocation, StackLocation};
 use warp::signature::function::{Function, FunctionGUID};
 use warp::target::Target;
 
-pub const APPLY_ACTIVITY_NAME: &str = "analysis.warp.apply";
-const APPLY_ACTIVITY_CONFIG: &str = r#"{
-    "name": "analysis.warp.apply",
-    "title" : "WARP Apply Matched",
-    "description": "This analysis step applies WARP info to matched functions...",
-    "eligibility": {
-        "auto": {},
-        "runOnce": false
-    }
-}"#;
-
-pub const MATCHER_ACTIVITY_NAME: &str = "analysis.warp.matcher";
-const MATCHER_ACTIVITY_CONFIG: &str = r#"{
-    "name": "analysis.warp.matcher",
-    "title" : "WARP Matcher",
-    "description": "This analysis step attempts to find matching WARP functions after the initial analysis is complete...",
-    "eligibility": {
-        "auto": {},
-        "runOnce": true
-    },
-    "dependencies": {
-        "downstream": ["core.module.update"]
-    }
-}"#;
-
 pub const GUID_ACTIVITY_NAME: &str = "analysis.warp.guid";
-const GUID_ACTIVITY_CONFIG: &str = r#"{
-    "name": "analysis.warp.guid",
-    "title" : "WARP GUID Generator",
-    "description": "This analysis step generates the GUID for all analyzed functions...",
-    "eligibility": {
-        "auto": {},
-        "runOnce": false
-    }
-}"#;
 
 pub struct RunMatcher;
 
@@ -191,29 +155,20 @@ pub fn run_matcher(view: &BinaryView) {
     view.update_analysis();
 }
 
-pub fn insert_workflow() {
+pub fn insert_workflow() -> Result<(), ()> {
+    // TODO: Note: because of symbol persistence function symbol is applied in `insert_cached_function_match`.
+    // TODO: Comments are also applied there, they are "user" like, persisted and make undo actions.
     // "Hey look, it's a plier" ~ Josh 2025
     let apply_activity = |ctx: &AnalysisContext| {
         let view = ctx.view();
         let function = ctx.function();
         if let Some(matched_function) = try_cached_function_match(&function) {
-            view.define_auto_symbol(&to_bn_symbol_at_address(
-                &view,
-                &matched_function.symbol,
-                function.symbol().address(),
-            ));
             // core.function.propagateAnalysis will assign user type info to auto, so we must not apply
             // otherwise we will wipe over user type info.
             if !function.has_user_type() {
                 if let Some(func_ty) = &matched_function.ty {
                     function.set_auto_type(&to_bn_type(&function.arch(), func_ty));
                 }
-            }
-            // TODO: How to clear the comments? They are just persisted.
-            // TODO: Also they generate an undo action, i hate implicit undo actions so much.
-            for comment in matched_function.comments {
-                let bn_comment = comment_to_bn_comment(&function, comment);
-                function.set_comment_at(bn_comment.addr, &bn_comment.comment);
             }
             if let Some(mlil) = ctx.mlil_function() {
                 for variable in matched_function.variables {
@@ -270,32 +225,51 @@ pub fn insert_workflow() {
         }
     };
 
-    let guid_activity = Activity::new_with_action(GUID_ACTIVITY_CONFIG, guid_activity);
-    let apply_activity = Activity::new_with_action(APPLY_ACTIVITY_CONFIG, apply_activity);
+    let guid_config = activity::Config::action(
+        GUID_ACTIVITY_NAME,
+        "WARP GUID Generator",
+        "This analysis step generates the GUID for all analyzed functions...",
+    )
+    .eligibility(activity::Eligibility::auto().run_once(false));
+    let guid_activity = Activity::new_with_action(&guid_config, guid_activity);
 
-    let add_function_activities = |workflow: &Workflow| {
-        let new_workflow = workflow.clone_to(&workflow.name());
-        new_workflow.register_activity(&guid_activity).unwrap();
-        new_workflow.register_activity(&apply_activity).unwrap();
-        new_workflow.insert_after("core.function.runFunctionRecognizers", [GUID_ACTIVITY_NAME]);
-        new_workflow.insert_after("core.function.generateMediumLevelIL", [APPLY_ACTIVITY_NAME]);
-        new_workflow.register().unwrap();
+    let apply_config = activity::Config::action(
+        "analysis.warp.apply",
+        "WARP Apply Matched",
+        "This analysis step applies WARP info to matched functions...",
+    )
+    .eligibility(activity::Eligibility::auto().run_once(false));
+    let apply_activity = Activity::new_with_action(&apply_config, apply_activity);
+
+    let add_function_activities = |workflow: Option<WorkflowBuilder>| -> Result<(), ()> {
+        let Some(workflow) = workflow else {
+            return Ok(());
+        };
+
+        workflow
+            .activity_after(&guid_activity, "core.function.runFunctionRecognizers")?
+            .activity_after(&apply_activity, "core.function.generateMediumLevelIL")?
+            .register()?;
+        Ok(())
     };
 
-    add_function_activities(&Workflow::instance("core.function.metaAnalysis"));
+    add_function_activities(Workflow::cloned("core.function.metaAnalysis"))?;
     // TODO: Remove this once the objectivec workflow is registered on the meta workflow.
-    add_function_activities(&Workflow::instance("core.function.objectiveC"));
+    add_function_activities(Workflow::cloned("core.function.objectiveC"))?;
 
-    let old_module_meta_workflow = Workflow::instance("core.module.metaAnalysis");
-    let module_meta_workflow = old_module_meta_workflow.clone_to("core.module.metaAnalysis");
-    let matcher_activity = Activity::new_with_action(MATCHER_ACTIVITY_CONFIG, matcher_activity);
+    let matcher_config = activity::Config::action(
+        "analysis.warp.matcher",
+        "WARP Matcher",
+        "This analysis step attempts to find matching WARP functions after the initial analysis is complete...",
+    )
+    .eligibility(activity::Eligibility::auto().run_once(true))
     // Matcher activity must have core.module.update as subactivity otherwise analysis will sometimes never retrigger.
-    module_meta_workflow
-        .register_activity(&matcher_activity)
-        .unwrap();
-    module_meta_workflow.insert(
-        "core.module.finishUpdate",
-        [MATCHER_ACTIVITY_NAME],
-    );
-    module_meta_workflow.register().unwrap();
+    .downstream_dependencies(["core.module.update"]);
+    let matcher_activity = Activity::new_with_action(&matcher_config, matcher_activity);
+    Workflow::cloned("core.module.metaAnalysis")
+        .ok_or(())?
+        .activity_before(&matcher_activity, "core.module.finishUpdate")?
+        .register()?;
+
+    Ok(())
 }
