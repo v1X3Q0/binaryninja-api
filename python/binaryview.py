@@ -6410,7 +6410,8 @@ class BinaryView:
 		``define_auto_symbol`` adds a symbol to the internal list of automatically discovered Symbol objects in a given
 		namespace.
 
-		.. warning:: If multiple symbols for the same address are defined, only the most recent symbol will ever be used.
+		.. warning:: If multiple symbols for the same address are defined, the symbol with the highest confidence and
+		  lowest SymbolType value will be used. Ties are broken by symbol name.
 
 		:param sym: the symbol to define
 		:rtype: None
@@ -6423,7 +6424,8 @@ class BinaryView:
 		"""
 		``define_auto_symbol_and_var_or_function`` Defines an "Auto" symbol, and a Variable/Function alongside it.
 
-		.. warning:: If multiple symbols for the same address are defined, only the most recent symbol will ever be used.
+		.. warning:: If multiple symbols for the same address are defined, the symbol with the highest confidence and
+		  lowest SymbolType value will be used. Ties are broken by symbol name.
 
 		:param sym: Symbol to define
 		:param type: Type for the function/variable being defined (can be None)
@@ -6465,7 +6467,8 @@ class BinaryView:
 		"""
 		``define_user_symbol`` adds a symbol to the internal list of user added Symbol objects.
 
-		.. warning:: If multiple symbols for the same address are defined, only the most recent symbol will ever be used.
+		.. warning:: If multiple symbols for the same address are defined, the symbol with the highest confidence and
+		  lowest SymbolType value will be used. Ties are broken by symbol name.
 
 		:param Symbol sym: the symbol to define
 		:rtype: None
@@ -11304,11 +11307,16 @@ class DataVariable(CoreDataVariable):
 
 	@symbol.setter
 	def symbol(self, value: Optional[Union[str, '_types.CoreSymbol']]) -> None:  # type: ignore
+		existing_symbol = self.symbol
 		if value is None or value == "":
-			if self.symbol is not None:
-				self.view.undefine_user_symbol(self.symbol)
+			if existing_symbol is not None:
+				self.view.undefine_user_symbol(existing_symbol)
 		elif isinstance(value, (str, _types.QualifiedName)):
-			symbol = _types.Symbol(SymbolType.DataSymbol, self.address, str(value))
+			if existing_symbol is not None:
+				symbol_type = existing_symbol.type
+			else:
+				symbol_type = SymbolType.DataSymbol
+			symbol = _types.Symbol(symbol_type, self.address, str(value))
 			self.view.define_user_symbol(symbol)
 		elif isinstance(value, _types.CoreSymbol):
 			self.view.define_user_symbol(value)
