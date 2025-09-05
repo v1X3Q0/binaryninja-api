@@ -164,8 +164,8 @@ impl CreateFromCurrentView {
 
         if let Err(err) = file {
             binaryninja::interaction::show_message_box(
-                "Error",
-                &format!("Failed to create signature file: {}", err),
+                "Failed to create signature file",
+                &err.to_string(),
                 MessageBoxButtonSet::OKButtonSet,
                 MessageBoxIcon::ErrorIcon,
             );
@@ -173,16 +173,30 @@ impl CreateFromCurrentView {
             return None;
         }
 
+        let background_task = BackgroundTask::new("Creating WARP File...", false);
         let mut file = file.unwrap();
         // Add back the existing chunks if the user selected to keep them.
-        file.chunks.extend(existing_chunks);
-        // TODO: Make merging optional?
-        file.chunks = Chunk::merge(&file.chunks, compression_type.into());
+        if !existing_chunks.is_empty() {
+            file.chunks.extend(existing_chunks);
+            // TODO: Make merging optional?
+            // TODO: Merging can lose chunk data if it goes above the maximum table count.
+            // TODO: We should probably solve that in the warp crate itself?
+            file.chunks = Chunk::merge(&file.chunks, compression_type.into());
 
-        if std::fs::write(&file_path, file.to_bytes()).is_err() {
+            // After merging, we should have at least one chunk. If not, merging actually removed data.
+            if file.chunks.len() < 1 {
+                log::error!("Failed to merge chunks! Please report this, it should not happen.");
+                return None;
+            }
+        }
+
+        let file_bytes = file.to_bytes();
+        let file_size = file_bytes.len();
+        if std::fs::write(&file_path, file_bytes).is_err() {
             log::error!("Failed to write data to signature file!");
         }
         log::info!("Saved signature file to: '{}'", file_path.display());
+        background_task.finish();
 
         // Show a report of the generate signatures, if desired.
         let report_generator = ReportGenerator::new();
@@ -195,16 +209,25 @@ impl CreateFromCurrentView {
                 let _ = std::fs::write(report_path, &report_string);
             }
 
-            match report_kind {
-                ReportKindField::None => {}
-                ReportKindField::Html => {
-                    view.show_html_report("Generated WARP File", report_string.as_str(), "");
-                }
-                ReportKindField::Markdown => {
-                    view.show_markdown_report("Generated WARP File", report_string.as_str(), "");
-                }
-                ReportKindField::Json => {
-                    view.show_plaintext_report("Generated WARP File", report_string.as_str());
+            // The ReportWidget uses a QTextBrowser, which cannot render large files very well.
+            if file_size > 10000000 {
+                log::warn!("WARP report file is too large to show in the UI. Please see the report file on disk.");
+            } else {
+                match report_kind {
+                    ReportKindField::None => {}
+                    ReportKindField::Html => {
+                        view.show_html_report("Generated WARP File", report_string.as_str(), "");
+                    }
+                    ReportKindField::Markdown => {
+                        view.show_markdown_report(
+                            "Generated WARP File",
+                            report_string.as_str(),
+                            "",
+                        );
+                    }
+                    ReportKindField::Json => {
+                        view.show_plaintext_report("Generated WARP File", report_string.as_str());
+                    }
                 }
             }
         }
