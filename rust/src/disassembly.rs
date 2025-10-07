@@ -142,6 +142,14 @@ impl DisassemblyTextLine {
             ..Default::default()
         }
     }
+
+    pub fn new_with_addr(tokens: Vec<InstructionTextToken>, addr: u64) -> Self {
+        Self {
+            address: addr,
+            tokens,
+            ..Default::default()
+        }
+    }
 }
 
 impl From<&str> for DisassemblyTextLine {
@@ -308,6 +316,10 @@ impl InstructionTextToken {
         }
     }
 
+    /// Construct a new token **without** an associated address.
+    ///
+    /// You most likely want to call [`InstructionTextToken::new_with_address`], while also adjusting
+    /// the [`InstructionTextToken::expr_index`] field where applicable.
     pub fn new(text: impl Into<String>, kind: InstructionTextTokenKind) -> Self {
         Self {
             address: 0,
@@ -493,13 +505,13 @@ pub enum InstructionTextTokenKind {
         hash: Option<u64>,
     },
     CodeSymbol {
-        // TODO: Value of what?
+        // Target address of the symbol
         value: u64,
         // TODO: Size of what?
         size: usize, // TODO: Operand?
     },
     DataSymbol {
-        // TODO: Value of what?
+        // Target address of the symbol
         value: u64,
         // TODO: Size of what?
         size: usize, // TODO: Operand?
@@ -544,6 +556,10 @@ pub enum InstructionTextTokenKind {
     CollapseStateIndicator {
         // TODO: Explain what this is
         hash: Option<u64>,
+    },
+    NewLine {
+        // Offset into instruction that this new line is associated with
+        value: u64,
     },
 }
 
@@ -721,6 +737,7 @@ impl InstructionTextTokenKind {
                     },
                 }
             }
+            BNInstructionTextTokenType::NewLineToken => Self::NewLine { value: value.value },
         }
     }
 
@@ -756,6 +773,7 @@ impl InstructionTextTokenKind {
             InstructionTextTokenKind::ExternalSymbol { value, .. } => Some(*value),
             InstructionTextTokenKind::StackVariable { variable_id, .. } => Some(*variable_id),
             InstructionTextTokenKind::CollapseStateIndicator { hash, .. } => *hash,
+            InstructionTextTokenKind::NewLine { value, .. } => Some(*value),
             _ => None,
         }
     }
@@ -925,6 +943,7 @@ impl From<InstructionTextTokenKind> for BNInstructionTextTokenType {
             InstructionTextTokenKind::CollapseStateIndicator { .. } => {
                 BNInstructionTextTokenType::CollapseStateIndicatorToken
             }
+            InstructionTextTokenKind::NewLine { .. } => BNInstructionTextTokenType::NewLineToken,
         }
     }
 }

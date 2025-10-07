@@ -3410,7 +3410,7 @@ class LowLevelILFunction:
 	def basic_blocks(self) -> 'function.LowLevelILBasicBlockList':
 		return function.LowLevelILBasicBlockList(self)
 
-	def get_basic_block_at(self, index: int) -> Optional['basicblock.BasicBlock']:
+	def get_basic_block_at(self, index: int) -> Optional['LowLevelILBasicBlock']:
 		"""
 		``get_basic_block_at`` returns the BasicBlock at the given LLIL instruction ``index``.
 
@@ -5251,8 +5251,8 @@ class LowLevelILFunction:
 
 	def call(self, dest: ExpressionIndex, loc: Optional['ILSourceLocation'] = None) -> ExpressionIndex:
 		"""
-		``call`` returns an expression which first pushes the address of the next instruction onto the stack then jumps
-		(branches) to the expression ``dest``
+		``call`` returns an expression which (on architectures without a link register) first pushes the address of the 
+		next instruction onto the stack then jumps (branches) to the expression ``dest``
 
 		:param ExpressionIndex dest: the expression to call
 		:param ILSourceLocation loc: location of returned expression
@@ -5269,9 +5269,8 @@ class LowLevelILFunction:
 		loc: Optional['ILSourceLocation'] = None
 	) -> ExpressionIndex:
 		"""
-		``call_stack_adjust`` returns an expression which first pushes the address of the next instruction onto the stack
-		then jumps (branches) to the expression ``dest``. After the function exits, ``stack_adjust`` is added to the
-		stack pointer register.
+		``call_stack_adjust`` returns an expression which (on architectures without a link register) first pushes the address of the next instruction onto the stack
+		then jumps (branches) to the expression ``dest``. After the function exits, ``stack_adjust`` is added to the stack pointer register.
 
 		:param ExpressionIndex dest: the expression to call
 		:param ILSourceLocation loc: location of returned expression
@@ -6136,7 +6135,8 @@ class LowLevelILFunction:
 	def prepare_to_copy_function(self, src: 'LowLevelILFunction'):
 		"""
 		``prepare_to_copy_function`` sets up state in this LLIL function in preparation
-		of copying instructions from ``src``
+		of copying instructions from ``src``.
+		It enables use of :py:func:`get_label_for_source_instruction` during function transformation.
 
 		:param LowLevelILFunction src: function about to be copied from
 		"""
@@ -6146,6 +6146,7 @@ class LowLevelILFunction:
 		"""
 		``prepare_to_copy_block`` sets up state when copying a function in preparation
 		of copying the instructions from the block ``src``
+		It enables use of :py:func:`get_label_for_source_instruction` during function transformation.
 
 		:param LowLevelILBasicBlock src: block about to be copied from
 		"""
@@ -6153,8 +6154,14 @@ class LowLevelILFunction:
 
 	def get_label_for_source_instruction(self, i: InstructionIndex) -> Optional['LowLevelILLabel']:
 		"""
-		Get the LowLevelILLabel for a given source instruction. The returned label is to an internal object with
-		the same lifetime as the containing LowLevelILFunction.
+		Get the LowLevelILLabel for a given source instruction. The source instruction must be
+		at the start of a basic block in the source function passed to :py:func:`prepare_to_copy_function`.
+		The label will be marked resolved when its source block is passed to :py:func:`prepare_to_copy_block`.
+
+		.. warning:: The instruction index parameter for this pertains to the *source function*
+		             passed to `prepare_to_copy_function`, not the current function.
+
+		.. note:: The returned label is to an internal object with the same lifetime as the containing LowLevelILFunction.
 
 		:param i: The source instruction index
 		:return: The LowLevelILLabel for the source instruction
@@ -6167,7 +6174,9 @@ class LowLevelILFunction:
 	def add_label_for_address(self, arch: 'architecture.Architecture', addr: int) -> None:
 		"""
 		``add_label_for_address`` adds a low-level IL label for the given architecture ``arch`` at the given virtual
-		address ``addr``
+		address ``addr``.
+		This is generally called automatically by the core when Lifted IL is being generated,
+		and will be automatically called with the start address of every basic block found during disassembly.
 
 		:param Architecture arch: Architecture to add labels for
 		:param int addr: the IL address to add a label at
@@ -6178,7 +6187,12 @@ class LowLevelILFunction:
 
 	def get_label_for_address(self, arch: 'architecture.Architecture', addr: int) -> Optional[LowLevelILLabel]:
 		"""
-		``get_label_for_address`` returns the LowLevelILLabel for the given Architecture ``arch`` and IL address ``addr``.
+		``get_label_for_address`` returns the LowLevelILLabel for the given Architecture ``arch`` and IL address ``addr``
+		that has been previously added to the function with :py:func:`add_label_for_address`.
+		When lifting to Lifted IL, labels will be automatically added with :py:func:`add_label_for_address`
+		for the start address of every basic block found during disassembly.
+
+		.. note:: The returned label is to an internal object with the same lifetime as the containing LowLevelILFunction.
 
 		:param Architecture arch:
 		:param int addr: IL Address label to retrieve

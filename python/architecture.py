@@ -3196,6 +3196,7 @@ class InstructionTextToken:
 		CommentToken               Comments
 		TypeNameToken              **Not emitted by architectures**
 		AddressSeparatorToken      **Not emitted by architectures**
+		NewLineToken               New lines
 		========================== ============================================
 
 	"""
@@ -3223,7 +3224,10 @@ class InstructionTextToken:
 			token_type = InstructionTextTokenType(tokens[j].type)
 			text = tokens[j].text
 			if not isinstance(text, str):
-				text = text.decode("utf-8")
+				try:
+					text = text.decode("utf-8")
+				except UnicodeDecodeError:
+					text = text.decode("charmap")
 			width = tokens[j].width
 			value = tokens[j].value
 			size = tokens[j].size

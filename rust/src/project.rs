@@ -21,11 +21,11 @@ pub struct Project {
 }
 
 impl Project {
-    pub(crate) unsafe fn from_raw(handle: NonNull<BNProject>) -> Self {
+    pub unsafe fn from_raw(handle: NonNull<BNProject>) -> Self {
         Project { handle }
     }
 
-    pub(crate) unsafe fn ref_from_raw(handle: NonNull<BNProject>) -> Ref<Self> {
+    pub unsafe fn ref_from_raw(handle: NonNull<BNProject>) -> Ref<Self> {
         Ref::new(Self { handle })
     }
 
@@ -612,7 +612,7 @@ impl Project {
     /// }
     /// ```
     // NOTE mut is used here, so only one lock can be acquired at once
-    pub fn bulk_operation(&mut self) -> Result<ProjectBulkOperationLock, ()> {
+    pub fn bulk_operation(&mut self) -> Result<ProjectBulkOperationLock<'_>, ()> {
         Ok(ProjectBulkOperationLock::lock(self))
     }
 }

@@ -49,6 +49,7 @@ use crate::variable::{
     StackVariableReference, Variable,
 };
 use crate::workflow::Workflow;
+use std::collections::HashSet;
 use std::ffi::CStr;
 use std::fmt::{Debug, Formatter};
 use std::ptr::NonNull;
@@ -1688,6 +1689,92 @@ impl Function {
         unsafe { BNSetUserInstructionHighlight(self.handle, arch.handle, addr, color.into()) }
     }
 
+    pub fn create_user_stack_var<'a, C: Into<Conf<&'a Type>>>(
+        &self,
+        offset: i64,
+        var_type: C,
+        name: &str,
+    ) {
+        let mut owned_raw_var_ty = Conf::<&Type>::into_raw(var_type.into());
+        let name = name.to_cstr();
+        unsafe {
+            BNCreateUserStackVariable(self.handle, offset, &mut owned_raw_var_ty, name.as_ptr())
+        }
+    }
+
+    pub fn delete_user_stack_var(&self, offset: i64) {
+        unsafe { BNDeleteUserStackVariable(self.handle, offset) }
+    }
+
+    pub fn create_user_var<'a, C: Into<Conf<&'a Type>>>(
+        &self,
+        var: &Variable,
+        var_type: C,
+        name: &str,
+        ignore_disjoint_uses: bool,
+    ) {
+        let raw_var = BNVariable::from(var);
+        let mut owned_raw_var_ty = Conf::<&Type>::into_raw(var_type.into());
+        let name = name.to_cstr();
+        unsafe {
+            BNCreateUserVariable(
+                self.handle,
+                &raw_var,
+                &mut owned_raw_var_ty,
+                name.as_ref().as_ptr() as *const _,
+                ignore_disjoint_uses,
+            )
+        }
+    }
+
+    pub fn delete_user_var(&self, var: &Variable) {
+        let raw_var = BNVariable::from(var);
+        unsafe { BNDeleteUserVariable(self.handle, &raw_var) }
+    }
+
+    pub fn is_var_user_defined(&self, var: &Variable) -> bool {
+        let raw_var = BNVariable::from(var);
+        unsafe { BNIsVariableUserDefined(self.handle, &raw_var) }
+    }
+
+    pub fn create_auto_stack_var<'a, T: Into<Conf<&'a Type>>>(
+        &self,
+        offset: i64,
+        var_type: T,
+        name: &str,
+    ) {
+        let mut owned_raw_var_ty = Conf::<&Type>::into_raw(var_type.into());
+        let name = name.to_cstr();
+        unsafe {
+            BNCreateAutoStackVariable(self.handle, offset, &mut owned_raw_var_ty, name.as_ptr())
+        }
+    }
+
+    pub fn delete_auto_stack_var(&self, offset: i64) {
+        unsafe { BNDeleteAutoStackVariable(self.handle, offset) }
+    }
+
+    pub fn create_auto_var<'a, C: Into<Conf<&'a Type>>>(
+        &self,
+        var: &Variable,
+        var_type: C,
+        name: &str,
+        ignore_disjoint_uses: bool,
+    ) {
+        let raw_var = BNVariable::from(var);
+        let mut owned_raw_var_ty = Conf::<&Type>::into_raw(var_type.into());
+        let name = name.to_cstr();
+        unsafe {
+            BNCreateAutoVariable(
+                self.handle,
+                &raw_var,
+                &mut owned_raw_var_ty,
+                name.as_ptr(),
+                ignore_disjoint_uses,
+            )
+        }
+    }
+
     /// return the address, if any, of the instruction that contains the
     /// provided address
     pub fn instruction_containing_address(
@@ -2500,6 +2587,21 @@ impl Function {
         let key = key.to_cstr();
         unsafe { BNFunctionRemoveMetadata(self.handle, key.as_ptr()) };
     }
+
+    pub fn guided_source_blocks(&self) -> HashSet<ArchAndAddr> {
+        let mut count = 0;
+        let raw = unsafe { BNGetGuidedSourceBlocks(self.handle, &mut count) };
+        if raw.is_null() || count == 0 {
+            return HashSet::new();
+        }
+
+        (0..count)
+            .map(|i| {
+                let raw = unsafe { std::ptr::read(raw.add(i)) };
+                ArchAndAddr::from(raw)
+            })
+            .collect::<HashSet<_>>()
+    }
 }
 
 impl Debug for Function {
@@ -2903,6 +3005,37 @@ unsafe impl CoreArrayProviderInner for Comment {
         Comment {
             addr: *raw,
             comment: function.comment_at(*raw),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub struct ArchAndAddr {
+    pub arch: CoreArchitecture,
+    pub addr: u64,
+}
+
+impl ArchAndAddr {
+    pub fn new(arch: CoreArchitecture, addr: u64) -> Self {
+        Self { arch, addr }
+    }
+}
+
+impl From<BNArchitectureAndAddress> for ArchAndAddr {
+    fn from(raw: BNArchitectureAndAddress) -> Self {
+        unsafe {
+            let arch = CoreArchitecture::from_raw(raw.arch);
+            let addr = raw.address;
+            ArchAndAddr { arch, addr }
+        }
+    }
+}
+
+impl ArchAndAddr {
+    pub fn into_raw(self) -> BNArchitectureAndAddress {
+        BNArchitectureAndAddress {
+            arch: self.arch.handle,
+            address: self.addr,
         }
     }
 }

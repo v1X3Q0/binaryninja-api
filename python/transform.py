@@ -26,6 +26,7 @@ import abc
 import binaryninja
 from .log import log_error_for_exception
 from . import databuffer
+from . import binaryview
 from . import _binaryninjacore as core
 from .enums import TransformType
 
@@ -99,6 +100,8 @@ class Transform(metaclass=_TransformMetaClass):
 		b'173d3b2c2c373923720f242d39'
 	"""
 	transform_type = None
+	capabilities = 0
+	supports_detection = False
 	name = None
 	long_name = None
 	group = None
@@ -113,6 +116,8 @@ class Transform(metaclass=_TransformMetaClass):
 			self._cb.freeParameters = self._cb.freeParameters.__class__(self._free_parameters)
 			self._cb.decode = self._cb.decode.__class__(self._decode)
 			self._cb.encode = self._cb.encode.__class__(self._encode)
+			self._cb.decodeWithContext = self._cb.decodeWithContext.__class__(self._decode_with_context)
+			self._cb.canDecode = self._cb.canDecode.__class__(self._can_decode)
 			self._pending_param_lists = {}
 			self.type = self.__class__.transform_type
 			if not isinstance(self.type, str):
@@ -125,6 +130,9 @@ class Transform(metaclass=_TransformMetaClass):
 		else:
 			self.handle = handle
 			self.type = TransformType(core.BNGetTransformType(self.handle))
+			self.capabilities = core.BNGetTransformCapabilities(self.handle)
+			self.supports_detection = core.BNTransformSupportsDetection(self.handle)
+			self.supports_context = core.BNTransformSupportsContext(self.handle)
 			self.name = core.BNGetTransformName(self.handle)
 			self.long_name = core.BNGetTransformLongName(self.handle)
 			self.group = core.BNGetTransformGroup(self.handle)
@@ -165,7 +173,7 @@ class Transform(metaclass=_TransformMetaClass):
 			cls.group = ""
 		xform = cls(None)
 		cls._registered_cb = xform._cb
-		xform.handle = core.BNRegisterTransformType(cls.transform_type, cls.name, cls.long_name, cls.group, xform._cb)
+		xform.handle = core.BNRegisterTransformTypeWithCapabilities(cls.transform_type, cls.capabilities, cls.name, cls.long_name, cls.group, xform._cb)
 
 	def _get_parameters(self, ctxt, count):
 		try:
@@ -226,6 +234,29 @@ class Transform(metaclass=_TransformMetaClass):
 			log_error_for_exception("Unhandled Python exception in Transform._encode")
 			return False
 
+	def _decode_with_context(self, ctxt, context, params, count):
+		try:
+			# TODO: Make Python TransformSession and TransformContext objects
+			from . import transform_context
+			context_obj = transform_context.TransformContext(core.BNNewTransformContextReference(context))
+			param_map = {}
+			for i in range(0, count):
+				data = databuffer.DataBuffer(handle=core.BNDuplicateDataBuffer(params[i].value))
+				param_map[params[i].name] = bytes(data)
+			result = self.perform_decode_with_context(context_obj, param_map)
+			return result if result is not None else False
+		except:
+			log_error_for_exception("Unhandled Python exception in Transform._decode_with_context")
+			return False
+
+	def _can_decode(self, ctxt, input):
+		try:
+			input_obj = binaryview.BinaryView(handle=core.BNNewViewReference(input))
+			return self.can_decode(input_obj)
+		except:
+			log_error_for_exception("Unhandled Python exception in Transform._can_decode")
+			return False
+
 	@abc.abstractmethod
 	def perform_decode(self, data, params):
 		if self.type == TransformType.InvertingTransform:
@@ -235,6 +266,9 @@ class Transform(metaclass=_TransformMetaClass):
 	@abc.abstractmethod
 	def perform_encode(self, data, params):
 		return None
+
+	def perform_decode_with_context(self, context, params):
+		return False
 
 	def decode(self, input_buf, params={}):
 		if isinstance(input_buf, int) or isinstance(input_buf, int):
@@ -267,3 +301,34 @@ class Transform(metaclass=_TransformMetaClass):
 		if not core.BNEncode(self.handle, input_buf.handle, output_buf.handle, param_buf, len(keys)):
 			return None
 		return bytes(output_buf)
+
+	def decode_with_context(self, context, params={}):
+		# TODO: Make Python TransformSession and TransformContext objects
+		from . import transform_context
+		if not isinstance(context, transform_context.TransformContext):
+			return None
+		keys = list(params.keys())
+		param_buf = (core.BNTransformParameter * len(keys))()
+		data = []
+		for i in range(0, len(keys)):
+			data.append(databuffer.DataBuffer(params[keys[i]]))
+			param_buf[i].name = keys[i]
+			param_buf[i].value = data[i].handle
+		if not core.BNDecodeWithContext(self.handle, context.handle, param_buf, len(keys)):
+			return False
+		return True
+
+	def can_decode(self, input):
+		"""
+		``can_decode`` checks if this transform can decode the given input.
+
+		:param input: can be a :py:class:`bytes`, :py:class:`bytearray`, :py:class:`DataBuffer`, or :py:class:`BinaryView`
+		:return: :py:class:`bool` indicating whether the transform can decode the input
+		:rtype: bool
+		"""
+		if isinstance(input, bytes) or isinstance(input, bytearray) or isinstance(input, databuffer.DataBuffer):
+			with binaryview.BinaryView.new(input) as view:
+				return core.BNCanDecode(self.handle, view.handle)
+		elif isinstance(input, binaryview.BinaryView):
+				return core.BNCanDecode(self.handle, input.handle)
+		return False

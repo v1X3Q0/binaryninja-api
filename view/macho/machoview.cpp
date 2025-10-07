@@ -790,6 +790,9 @@ MachOHeader MachoView::HeaderForAddress(BinaryView* data, uint64_t address, bool
 				}
 				break;
 			case LC_LOAD_DYLIB:
+			case LC_LOAD_WEAK_DYLIB:
+			case LC_REEXPORT_DYLIB:
+			case LC_LOAD_UPWARD_DYLIB:
 			{
 				uint32_t offset = reader.Read32();
 				reader.Read32(); // timestamp
@@ -956,6 +959,8 @@ bool MachoView::IsValidFunctionStart(uint64_t addr)
 		const auto& instr = ilFunc->GetInstruction(i);
 		if (instr.operation == LLIL_UNDEF)
 			return false;
+		if (i == 0 && instr.operation == LLIL_TRAP)
+			return false;
 	}
 
 	return true;
@@ -990,12 +995,12 @@ void MachoView::ParseFunctionStarts(Platform* platform, uint64_t textBase, funct
 			uint64_t target = curfunc;
 			if (!IsValidFunctionStart(target))
 			{
-				m_logger->LogWarn("Possible error processing LC_FUNCTION_STARTS! Not adding function at: 0x%" PRIx64 "\n", target);
+				m_logger->LogInfoF("Address {:#x} referenced from LC_FUNCTION_STARTS does not appear to be a function", target);
 				continue;
 			}
 			Ref<Platform> targetPlatform = platform->GetAssociatedPlatformByAddress(target);
 			AddFunctionForAnalysis(targetPlatform, target);
-			m_logger->LogDebug("Adding function start: %#" PRIx64 "\n", curfunc);
+			m_logger->LogDebugF("Adding function start: {:#x}", curfunc);
 		}
 	}
 	catch (ReadException&)
@@ -2087,6 +2092,8 @@ bool MachoView::InitializeHeader(MachOHeader& header, bool isMainHeader, uint64_
 		if (objcProcessor)
 			objcProcessor->AddRelocatedPointer(relocationLocation, slidTarget);
 	}
+
+	Ref<Metadata> symbolToLibraryMapping = new Metadata(KeyValueDataType);
 	for (auto& [relocation, name, ordinal] : header.bindingRelocations)
 	{
 		bool handled = false;
@@ -2149,6 +2156,8 @@ bool MachoView::InitializeHeader(MachOHeader& header, bool isMainHeader, uint64_
 					DefineRelocation(m_arch, relocation, symbol, relocation.address);
 					handled = true;
 				}
+				if (ordinal - 1 < header.dylibs.size())
+					symbolToLibraryMapping->SetValueForKey(name, new Metadata(header.dylibs[ordinal - 1].first));
 			}
 			break;
 		}
@@ -2156,6 +2165,8 @@ bool MachoView::InitializeHeader(MachOHeader& header, bool isMainHeader, uint64_
 		if (!handled)
 			m_logger->LogErrorF("Failed to find external symbol {:?}, couldn't bind symbol at {:#x}", name, relocation.address);
 	}
+
+	StoreMetadata("SymbolExternalLibraryMapping", std::move(symbolToLibraryMapping), true);
 
 	auto relocationHandler = m_arch->GetRelocationHandler("Mach-O");
 	if (relocationHandler)

@@ -1,15 +1,18 @@
-use crate::cache::container::for_cached_containers;
+use crate::cache::container::{for_cached_containers, for_cached_containers_mut};
 use crate::cache::{
     cached_function_guid, insert_cached_function_match, try_cached_function_guid,
     try_cached_function_match,
 };
 use crate::convert::{platform_to_target, to_bn_type};
 use crate::matcher::{Matcher, MatcherSettings};
+use crate::plugin::settings::PluginSettings;
 use crate::{get_warp_tag_type, relocatable_regions};
 use binaryninja::architecture::RegisterId;
 use binaryninja::background_task::BackgroundTask;
 use binaryninja::binary_view::{BinaryView, BinaryViewExt};
 use binaryninja::command::Command;
+use binaryninja::function::Function as BNFunction;
+use binaryninja::rc::Ref as BNRef;
 use binaryninja::settings::{QueryOptions, Settings};
 use binaryninja::workflow::{activity, Activity, AnalysisContext, Workflow, WorkflowBuilder};
 use itertools::Itertools;
@@ -47,6 +50,62 @@ impl Command for RunMatcher {
     }
 }
 
+/// This is a helper struct that contains all the functions that match on a given target.
+///
+/// We build this when matching and fetching so that we can relate different functions to another.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct FunctionSet {
+    functions_by_target_and_guid: HashMap<(FunctionGUID, Target), Vec<BNRef<BNFunction>>>,
+    guids_by_target: HashMap<Target, Vec<FunctionGUID>>,
+}
+
+impl FunctionSet {
+    fn from_view(view: &BinaryView) -> Option<Self> {
+        let mut set = FunctionSet::default();
+
+        // TODO: Par iter this? Using dashmap
+        set.functions_by_target_and_guid = view
+            .functions()
+            .iter()
+            .filter_map(|f| {
+                let guid = try_cached_function_guid(&f)?;
+                let target = platform_to_target(&f.platform());
+                Some(((guid, target), f.to_owned()))
+            })
+            .into_group_map();
+
+        if set.functions_by_target_and_guid.is_empty() && !view.functions().is_empty() {
+            // The user is likely trying to run the matcher on a database before guids were automatically
+            // generated, we should alert them and ask if they would like to reanalyze.
+            // NOTE: We only alert if we actually have the GUID activity enabled.
+            if let Some(sample_function) = view.functions().iter().next() {
+                let function_workflow = sample_function
+                    .workflow()
+                    .expect("Function has no workflow");
+                if function_workflow.contains(GUID_ACTIVITY_NAME) {
+                    log::error!("No function guids in database, please reanalyze the database.");
+                } else {
+                    log::error!(
+                    "Activity '{}' is not in workflow '{}', create function guids manually to run matcher...",
+                    GUID_ACTIVITY_NAME,
+                    function_workflow.name()
+                )
+                }
+            }
+            return None;
+        }
+
+        // TODO: Par iter this? Using dashmap
+        set.guids_by_target = set
+            .functions_by_target_and_guid
+            .keys()
+            .map(|(guid, target)| (target.clone(), *guid))
+            .into_group_map();
+
+        Some(set)
+    }
+}
+
 pub fn run_matcher(view: &BinaryView) {
     // TODO: Create the tag type so we dont have UB in the apply function workflow.
     let undo_id = view.file().begin_undo_actions(false);
@@ -63,44 +122,10 @@ pub fn run_matcher(view: &BinaryView) {
     let matcher_settings = MatcherSettings::from_settings(&view_settings, &mut query_opts);
     let matcher = Matcher::new(matcher_settings);
 
-    // TODO: Par iter this? Using dashmap
-    let functions_by_target_and_guid: HashMap<(FunctionGUID, Target), Vec<_>> = view
-        .functions()
-        .iter()
-        .filter_map(|f| {
-            let guid = try_cached_function_guid(&f)?;
-            let target = platform_to_target(&f.platform());
-            Some(((guid, target), f.to_owned()))
-        })
-        .into_group_map();
-
-    if functions_by_target_and_guid.is_empty() && !view.functions().is_empty() {
-        // The user is likely trying to run the matcher on a database before guids were automatically
-        // generated, we should alert them and ask if they would like to reanalyze.
-        // NOTE: We only alert if we actually have the GUID activity enabled.
-        if let Some(sample_function) = view.functions().iter().next() {
-            let function_workflow = sample_function
-                .workflow()
-                .expect("Function has no workflow");
-            if function_workflow.contains(GUID_ACTIVITY_NAME) {
-                log::error!("No function guids in database, please reanalyze the database.");
-            } else {
-                log::error!(
-                    "Activity '{}' is not in workflow '{}', create function guids manually to run matcher...",
-                    GUID_ACTIVITY_NAME,
-                    function_workflow.name()
-                )
-            }
-        }
+    let Some(function_set) = FunctionSet::from_view(view) else {
         background_task.finish();
         return;
-    }
-
-    // TODO: Par iter this? Using dashmap
-    let guids_by_target: HashMap<Target, Vec<FunctionGUID>> = functions_by_target_and_guid
-        .keys()
-        .map(|(guid, target)| (target.clone(), *guid))
-        .into_group_map();
+    };
 
     // TODO: Target gets cloned a lot.
     // TODO: Containers might both match on the same function. What should we do?
@@ -109,7 +134,7 @@ pub fn run_matcher(view: &BinaryView) {
             return;
         }
 
-        for (target, guids) in &guids_by_target {
+        for (target, guids) in &function_set.guids_by_target {
             let function_guid_with_sources = container
                 .sources_with_function_guids(target, guids)
                 .unwrap_or_default();
@@ -140,7 +165,8 @@ pub fn run_matcher(view: &BinaryView) {
                         return;
                     }
 
-                    let functions = functions_by_target_and_guid
+                    let functions = function_set
+                        .functions_by_target_and_guid
                         .get(&(guid, target.clone()))
                         .expect("Function guid not found");
 
@@ -162,15 +188,51 @@ pub fn run_matcher(view: &BinaryView) {
         log::info!("Matcher was cancelled by user, you may run it again by running the 'Run Matcher' command.");
     }
 
-    // It is noisy to show this every time, so we only show it in cases where a user can reasonably perceive.
-    let elapsed = start.elapsed();
-    if elapsed > std::time::Duration::from_secs(1) {
-        log::info!("Function matching took {:?}", elapsed);
-    }
+    log::info!("Function matching took {:?}", start.elapsed());
     background_task.finish();
 
     // Now we want to trigger re-analysis.
     view.update_analysis();
+}
+
+pub fn run_fetcher(view: &BinaryView) {
+    let background_task = BackgroundTask::new("Fetching WARP functions...", true);
+    let start = Instant::now();
+
+    // Build matcher
+    let view_settings = Settings::new();
+    let mut query_opts = QueryOptions::new_with_view(view);
+    let plugin_settings = PluginSettings::from_settings(&view_settings, &mut query_opts);
+
+    let Some(function_set) = FunctionSet::from_view(view) else {
+        background_task.finish();
+        return;
+    };
+
+    for_cached_containers_mut(|container| {
+        if background_task.is_cancelled() {
+            return;
+        }
+
+        for (target, guids) in &function_set.guids_by_target {
+            for batch in guids.chunks(plugin_settings.fetch_batch_size) {
+                if background_task.is_cancelled() {
+                    break;
+                }
+                let _ =
+                    container.fetch_functions(target, &plugin_settings.allowed_source_tags, batch);
+            }
+        }
+    });
+
+    if background_task.is_cancelled() {
+        log::info!(
+            "Fetcher was cancelled by user, you may run it again by running the 'Fetch' command."
+        );
+    }
+
+    log::info!("Fetching took {:?}", start.elapsed());
+    background_task.finish();
 }
 
 pub fn insert_workflow() -> Result<(), ()> {
@@ -185,7 +247,7 @@ pub fn insert_workflow() -> Result<(), ()> {
             // otherwise we will wipe over user type info.
             if !function.has_user_type() {
                 if let Some(func_ty) = &matched_function.ty {
-                    function.set_auto_type(&to_bn_type(&function.arch(), func_ty));
+                    function.set_auto_type(&to_bn_type(Some(function.arch()), func_ty));
                 }
             }
             if let Some(mlil) = ctx.mlil_function() {
@@ -200,13 +262,13 @@ pub fn insert_workflow() -> Result<(), ()> {
                                 decl_instr.variable_for_stack_location_after(offset)
                             }
                         };
-                        if mlil.is_var_user_defined(&decl_var) {
+                        if function.is_var_user_defined(&decl_var) {
                             // Internally, analysis will just assign user vars to auto vars and consult only that.
                             // So we must skip if there is a user-defined var at the decl.
                             continue;
                         }
                         let decl_ty = match variable.ty {
-                            Some(decl_ty) => to_bn_type(&function.arch(), &decl_ty),
+                            Some(decl_ty) => to_bn_type(Some(function.arch()), &decl_ty),
                             None => {
                                 let Some(existing_var) = function.variable_type(&decl_var) else {
                                     continue;
@@ -217,7 +279,7 @@ pub fn insert_workflow() -> Result<(), ()> {
                         let decl_name = variable
                             .name
                             .unwrap_or_else(|| function.variable_name(&decl_var));
-                        mlil.create_auto_var(&decl_var, &decl_ty, &decl_name, false)
+                        function.create_auto_var(&decl_var, &decl_ty, &decl_name, false)
                     }
                 }
             }
@@ -234,6 +296,11 @@ pub fn insert_workflow() -> Result<(), ()> {
     let matcher_activity = |ctx: &AnalysisContext| {
         let view = ctx.view();
         run_matcher(&view);
+    };
+
+    let fetcher_activity = |ctx: &AnalysisContext| {
+        let view = ctx.view();
+        run_fetcher(&view);
     };
 
     let guid_activity = |ctx: &AnalysisContext| {
@@ -273,6 +340,14 @@ pub fn insert_workflow() -> Result<(), ()> {
     // TODO: Remove this once the objectivec workflow is registered on the meta workflow.
     add_function_activities(Workflow::cloned("core.function.objectiveC"))?;
 
+    let fetcher_config = activity::Config::action(
+        "analysis.warp.fetcher",
+        "WARP Fetcher",
+        "This analysis step attempts to fetch WARP functions from network containers after the initial analysis is complete...",
+    )
+        .eligibility(activity::Eligibility::auto_with_default(false).run_once(true));
+    let fetcher_activity = Activity::new_with_action(&fetcher_config, fetcher_activity);
+
     let matcher_config = activity::Config::action(
         "analysis.warp.matcher",
         "WARP Matcher",
@@ -285,6 +360,7 @@ pub fn insert_workflow() -> Result<(), ()> {
     Workflow::cloned("core.module.metaAnalysis")
         .ok_or(())?
         .activity_before(&matcher_activity, "core.module.finishUpdate")?
+        .activity_before(&fetcher_activity, "analysis.warp.matcher")?
         .register()?;
 
     Ok(())

@@ -100,21 +100,21 @@ impl Matcher {
 
     // TODO: I would really like for WARP types to be added in a seperate type container, so that we don't
     // TODO: just add them as system or user types.
-    pub fn add_type_to_view<A: BNArchitecture>(
+    pub fn add_type_to_view<A: BNArchitecture + Copy>(
         &self,
         container: &dyn Container,
         source: &SourceId,
         view: &BinaryView,
-        arch: &A,
+        arch: A,
         ty: &Type,
     ) where
         Self: Sized,
     {
-        fn inner_add_type_to_view<A: BNArchitecture>(
+        fn inner_add_type_to_view<A: BNArchitecture + Copy>(
             container: &dyn Container,
             source: &SourceId,
             view: &BinaryView,
-            arch: &A,
+            arch: A,
             visited_refs: &mut HashSet<String>,
             ty: &Type,
         ) {
@@ -251,7 +251,7 @@ impl Matcher {
                             view.define_auto_type_with_id(
                                 name,
                                 &guid.to_string(),
-                                &to_bn_type(arch, &ref_ty),
+                                &to_bn_type(Some(arch), &ref_ty),
                             );
                         }
                         (Some(_guid), Some(_name), None) => {
@@ -316,21 +316,32 @@ pub struct MatcherSettings {
 
 impl MatcherSettings {
     pub const TRIVIAL_FUNCTION_LEN_DEFAULT: u64 = 20;
-    pub const TRIVIAL_FUNCTION_LEN_SETTING: &'static str = "analysis.warp.trivialFunctionLength";
+    pub const TRIVIAL_FUNCTION_LEN_SETTING_ALIAS: [&'static str; 1] =
+        ["analysis.warp.trivialFunctionLength"];
+    pub const TRIVIAL_FUNCTION_LEN_SETTING: &'static str = "warp.matcher.trivialFunctionLength";
     pub const MINIMUM_FUNCTION_LEN_DEFAULT: u64 = 0;
-    pub const MINIMUM_FUNCTION_LEN_SETTING: &'static str = "analysis.warp.minimumFunctionLength";
+    pub const MINIMUM_FUNCTION_LEN_SETTING_ALIAS: [&'static str; 1] =
+        ["analysis.warp.minimumFunctionLength"];
+    pub const MINIMUM_FUNCTION_LEN_SETTING: &'static str = "warp.matcher.minimumFunctionLength";
     pub const MAXIMUM_FUNCTION_LEN_DEFAULT: u64 = 0;
-    pub const MAXIMUM_FUNCTION_LEN_SETTING: &'static str = "analysis.warp.maximumFunctionLength";
+    pub const MAXIMUM_FUNCTION_LEN_SETTING_ALIAS: [&'static str; 1] =
+        ["analysis.warp.maximumFunctionLength"];
+    pub const MAXIMUM_FUNCTION_LEN_SETTING: &'static str = "warp.matcher.maximumFunctionLength";
     pub const MINIMUM_MATCHED_CONSTRAINTS_DEFAULT: usize = 1;
+    pub const MINIMUM_MATCHED_CONSTRAINTS_SETTING_ALIAS: [&'static str; 1] =
+        ["analysis.warp.minimumMatchedConstraints"];
     pub const MINIMUM_MATCHED_CONSTRAINTS_SETTING: &'static str =
-        "analysis.warp.minimumMatchedConstraints";
+        "warp.matcher.minimumMatchedConstraints";
     pub const TRIVIAL_FUNCTION_ADJACENT_ALLOWED_DEFAULT: bool = false;
+    pub const TRIVIAL_FUNCTION_ADJACENT_ALLOWED_SETTING_ALIAS: [&'static str; 1] =
+        ["analysis.warp.trivialFunctionAdjacentAllowed"];
     pub const TRIVIAL_FUNCTION_ADJACENT_ALLOWED_SETTING: &'static str =
-        "analysis.warp.trivialFunctionAdjacentAllowed";
+        "warp.matcher.trivialFunctionAdjacentAllowed";
+    pub const MAXIMUM_POSSIBLE_FUNCTIONS_SETTING_ALIAS: [&'static str; 1] =
+        ["analysis.warp.maximumPossibleFunctions"];
     pub const MAXIMUM_POSSIBLE_FUNCTIONS_SETTING: &'static str =
-        "analysis.warp.maximumPossibleFunctions";
+        "warp.matcher.maximumPossibleFunctions";
     pub const MAXIMUM_POSSIBLE_FUNCTIONS_DEFAULT: u64 = 1000;
-
     /// Populates the [MatcherSettings] to the current Binary Ninja settings instance.
     ///
     /// Call this once when you initialize so that the settings exist.
@@ -343,7 +354,8 @@ impl MatcherSettings {
             "type" : "number",
             "default" : Self::TRIVIAL_FUNCTION_LEN_DEFAULT,
             "description" : "Functions below this length in bytes will be required to match on constraints.",
-            "ignore" : []
+            "ignore" : [],
+            "aliases" : Self::TRIVIAL_FUNCTION_LEN_SETTING_ALIAS,
         });
         bn_settings.register_setting_json(
             Self::TRIVIAL_FUNCTION_LEN_SETTING,
@@ -355,7 +367,8 @@ impl MatcherSettings {
             "type" : "number",
             "default" : Self::MINIMUM_FUNCTION_LEN_DEFAULT,
             "description" : "Functions below this length will not be matched.",
-            "ignore" : []
+            "ignore" : [],
+            "aliases" : Self::MINIMUM_FUNCTION_LEN_SETTING_ALIAS,
         });
         bn_settings.register_setting_json(
             Self::MINIMUM_FUNCTION_LEN_SETTING,
@@ -367,7 +380,8 @@ impl MatcherSettings {
             "type" : "number",
             "default" : Self::MAXIMUM_FUNCTION_LEN_DEFAULT,
             "description" : "Functions above this length will not be matched. A value of 0 will disable this check.",
-            "ignore" : []
+            "ignore" : [],
+            "aliases" : Self::MAXIMUM_FUNCTION_LEN_SETTING_ALIAS,
         });
         bn_settings.register_setting_json(
             Self::MAXIMUM_FUNCTION_LEN_SETTING,
@@ -379,7 +393,8 @@ impl MatcherSettings {
             "type" : "number",
             "default" : Self::MINIMUM_MATCHED_CONSTRAINTS_DEFAULT,
             "description" : "When function constraints are checked the amount of constraints matched must be at-least this.",
-            "ignore" : []
+            "ignore" : [],
+            "aliases" : Self::MINIMUM_MATCHED_CONSTRAINTS_SETTING_ALIAS,
         });
         bn_settings.register_setting_json(
             Self::MINIMUM_MATCHED_CONSTRAINTS_SETTING,
@@ -391,7 +406,8 @@ impl MatcherSettings {
             "type" : "boolean",
             "default" : Self::TRIVIAL_FUNCTION_ADJACENT_ALLOWED_DEFAULT,
             "description" : "When function constraints are checked if this is enabled functions can match based off trivial adjacent functions.",
-            "ignore" : []
+            "ignore" : [],
+            "aliases" : Self::TRIVIAL_FUNCTION_ADJACENT_ALLOWED_SETTING_ALIAS,
         });
         bn_settings.register_setting_json(
             Self::TRIVIAL_FUNCTION_ADJACENT_ALLOWED_SETTING,
@@ -403,7 +419,8 @@ impl MatcherSettings {
             "type" : "number",
             "default" : Self::MAXIMUM_POSSIBLE_FUNCTIONS_DEFAULT,
             "description" : "When matching any function that has a list of possible functions greater than this number will be skipped. A value of 0 will disable this check.",
-            "ignore" : []
+            "ignore" : [],
+            "aliases" : Self::MAXIMUM_POSSIBLE_FUNCTIONS_SETTING_ALIAS,
         });
         bn_settings.register_setting_json(
             Self::MAXIMUM_POSSIBLE_FUNCTIONS_SETTING,

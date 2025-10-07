@@ -37,14 +37,14 @@
 // Current ABI version for linking to the core. This is incremented any time
 // there are changes to the API that affect linking, including new functions,
 // new types, or modifications to existing functions or types.
-#define BN_CURRENT_CORE_ABI_VERSION 132
+#define BN_CURRENT_CORE_ABI_VERSION 135
 
 // Minimum ABI version that is supported for loading of plugins. Plugins that
 // are linked to an ABI version less than this will not be able to load and
 // will require rebuilding. The minimum version is increased when there are
 // incompatible changes that break binary compatibility, such as changes to
 // existing types or functions.
-#define BN_MINIMUM_CORE_ABI_VERSION 131
+#define BN_MINIMUM_CORE_ABI_VERSION 134
 
 #ifdef __GNUC__
 	#ifdef BINARYNINJACORE_LIBRARY
@@ -205,6 +205,8 @@ extern "C"
 	typedef struct BNDatabase BNDatabase;
 	typedef struct BNFileMetadata BNFileMetadata;
 	typedef struct BNTransform BNTransform;
+	typedef struct BNTransformContext BNTransformContext;
+	typedef struct BNTransformSession BNTransformSession;
 	typedef struct BNArchitecture BNArchitecture;
 	typedef struct BNFunction BNFunction;
 	typedef struct BNBasicBlock BNBasicBlock;
@@ -348,6 +350,20 @@ extern "C"
 		HashTransform = 8           // Hash function
 	} BNTransformType;
 
+	typedef enum BNTransformCapabilities
+	{
+		TransformNoCapabilities = 0,
+		TransformSupportsDetection = 1,
+		TransformSupportsContext = 2
+	} BNTransformCapabilities;
+
+	typedef enum BNTransformSessionMode
+	{
+		TransformSessionModeDisabled = 0, // Open the root file as-is (no unwrapping)
+		TransformSessionModeFull = 1,     // Discover all paths (build the full context tree)
+		TransformSessionModeOnDemand = 2, // Proceed step-by-step, requesting input at each stage
+	} BNTransformSessionMode;
+
 	typedef enum BNBranchType
 	{
 		UnconditionalBranch = 0,
@@ -416,7 +432,8 @@ extern "C"
 		StackVariableToken = 71,
 		AddressSeparatorToken = 72,
 		CollapsedInformationToken = 73,
-		CollapseStateIndicatorToken = 74
+		CollapseStateIndicatorToken = 74,
+		NewLineToken = 75
 	} BNInstructionTextTokenType;
 
 	typedef enum BNInstructionTextTokenContext
@@ -1044,6 +1061,9 @@ extern "C"
 
 		// HLIL condition chain can be rewritten as a switch statement
 		HLILSwitchRecoveryPossible = 0x800,
+
+		// Cue for use-def heuristics to follow through simple copies (e.g., register windowing for Xtensa)
+		ILTransparentCopy = 0x1000,
 	} BNILInstructionAttribute;
 
 	typedef enum BNIntrinsicClass
@@ -1749,10 +1769,10 @@ extern "C"
 		void* context;
 		BNTransformParameterInfo* (*getParameters)(void* ctxt, size_t* count);
 		void (*freeParameters)(BNTransformParameterInfo* params, size_t count);
-		bool (*decode)(
-		    void* ctxt, BNDataBuffer* input, BNDataBuffer* output, BNTransformParameter* params, size_t paramCount);
-		bool (*encode)(
-		    void* ctxt, BNDataBuffer* input, BNDataBuffer* output, BNTransformParameter* params, size_t paramCount);
+		bool (*decode)(void* ctxt, BNDataBuffer* input, BNDataBuffer* output, BNTransformParameter* params, size_t paramCount);
+		bool (*encode)(void* ctxt, BNDataBuffer* input, BNDataBuffer* output, BNTransformParameter* params, size_t paramCount);
+		bool (*decodeWithContext)(void* ctxt, BNTransformContext* context, BNTransformParameter* params, size_t paramCount);
+		bool (*canDecode)(void* ctxt, BNBinaryView* input);
 	} BNCustomTransform;
 
 	typedef struct BNInstructionInfo
@@ -3772,6 +3792,12 @@ extern "C"
 		size_t typeRefCount;
 	} BNAllTypeFieldReferences;
 
+	typedef struct BNTypeAttribute
+	{
+		char* name;
+		char* value;
+	} BNTypeAttribute;
+
 	BINARYNINJACOREAPI char* BNAllocString(const char* contents);
 	BINARYNINJACOREAPI char* BNAllocStringWithLength(const char* contents, size_t len);
 	BINARYNINJACOREAPI void BNFreeString(char* str);
@@ -3798,6 +3824,7 @@ extern "C"
 	BINARYNINJACOREAPI void BNSetLicense(const char* licenseData);
 
 	BINARYNINJACOREAPI bool BNIsDatabase(const char* filename);
+	BINARYNINJACOREAPI bool BNIsDatabaseFromData(const void* data, size_t len);
 
 	BINARYNINJACOREAPI bool BNAuthenticateEnterpriseServerWithCredentials(
 	    const char* username, const char* password, bool remember);
@@ -4229,6 +4256,9 @@ extern "C"
 	BINARYNINJACOREAPI char* BNGetFilename(BNFileMetadata* file);
 	BINARYNINJACOREAPI void BNSetFilename(BNFileMetadata* file, const char* name);
 
+	BINARYNINJACOREAPI char* BNGetVirtualPath(BNFileMetadata* file);
+	BINARYNINJACOREAPI void BNSetVirtualPath(BNFileMetadata* file, const char* path);
+
 	BINARYNINJACOREAPI BNProjectFile* BNGetProjectFile(BNFileMetadata* file);
 	BINARYNINJACOREAPI void BNSetProjectFile(BNFileMetadata* file, BNProjectFile* pfile);
 
@@ -4304,6 +4334,8 @@ extern "C"
 
 	BINARYNINJACOREAPI size_t BNReadViewData(BNBinaryView* view, void* dest, uint64_t offset, size_t len);
 	BINARYNINJACOREAPI BNDataBuffer* BNReadViewBuffer(BNBinaryView* view, uint64_t offset, size_t len);
+	BINARYNINJACOREAPI const uint8_t* BNGetViewDataPointer(BNBinaryView* view);
+	BINARYNINJACOREAPI size_t BNGetViewDataLength(BNBinaryView* view);
 
 	BINARYNINJACOREAPI size_t BNWriteViewData(BNBinaryView* view, uint64_t offset, const void* data, size_t len);
 	BINARYNINJACOREAPI size_t BNWriteViewBuffer(BNBinaryView* view, uint64_t offset, BNDataBuffer* data);
@@ -4606,10 +4638,13 @@ extern "C"
 	BINARYNINJACOREAPI BNTransform* BNGetTransformByName(const char* name);
 	BINARYNINJACOREAPI BNTransform** BNGetTransformTypeList(size_t* count);
 	BINARYNINJACOREAPI void BNFreeTransformTypeList(BNTransform** xforms);
-	BINARYNINJACOREAPI BNTransform* BNRegisterTransformType(
-	    BNTransformType type, const char* name, const char* longName, const char* group, BNCustomTransform* xform);
+	BINARYNINJACOREAPI BNTransform* BNRegisterTransformType(BNTransformType type, const char* name, const char* longName, const char* group, BNCustomTransform* xform);
+	BINARYNINJACOREAPI BNTransform* BNRegisterTransformTypeWithCapabilities(BNTransformType type, uint32_t capabilities, const char* name, const char* longName, const char* group, BNCustomTransform* xform);
 
 	BINARYNINJACOREAPI BNTransformType BNGetTransformType(BNTransform* xform);
+	BINARYNINJACOREAPI uint32_t BNGetTransformCapabilities(BNTransform* xform);
+	BINARYNINJACOREAPI bool BNTransformSupportsDetection(BNTransform* xform);
+	BINARYNINJACOREAPI bool BNTransformSupportsContext(BNTransform* xform);
 	BINARYNINJACOREAPI char* BNGetTransformName(BNTransform* xform);
 	BINARYNINJACOREAPI char* BNGetTransformLongName(BNTransform* xform);
 	BINARYNINJACOREAPI char* BNGetTransformGroup(BNTransform* xform);
@@ -4619,6 +4654,52 @@ extern "C"
 	    BNTransform* xform, BNDataBuffer* input, BNDataBuffer* output, BNTransformParameter* params, size_t paramCount);
 	BINARYNINJACOREAPI bool BNEncode(
 	    BNTransform* xform, BNDataBuffer* input, BNDataBuffer* output, BNTransformParameter* params, size_t paramCount);
+	BINARYNINJACOREAPI bool BNDecodeWithContext(BNTransform* xform, BNTransformContext* context, BNTransformParameter* params, size_t paramCount);
+	BINARYNINJACOREAPI bool BNCanDecode(BNTransform* xform, BNBinaryView* input);
+
+	// Transform Context
+	BINARYNINJACOREAPI BNTransformContext* BNNewTransformContextReference(BNTransformContext* context);
+	BINARYNINJACOREAPI void BNFreeTransformContext(BNTransformContext* context);
+	BINARYNINJACOREAPI char* BNTransformContextGetTransformName(BNTransformContext* context);
+	BINARYNINJACOREAPI char* BNTransformContextGetFileName(BNTransformContext* context);
+	BINARYNINJACOREAPI BNBinaryView* BNTransformContextGetInput(BNTransformContext* context);
+	BINARYNINJACOREAPI BNMetadata* BNTransformContextGetMetadata(BNTransformContext* context);
+	BINARYNINJACOREAPI BNTransformContext* BNTransformContextGetParent(BNTransformContext* context);
+	BINARYNINJACOREAPI size_t BNTransformContextGetChildCount(BNTransformContext* context);
+	BINARYNINJACOREAPI BNTransformContext** BNTransformContextGetChildren(BNTransformContext* context, size_t* count);
+	BINARYNINJACOREAPI void BNFreeTransformContextList(BNTransformContext** contexts, size_t count);
+	BINARYNINJACOREAPI BNTransformContext* BNTransformContextGetChild(BNTransformContext* context, const char* filename);
+	BINARYNINJACOREAPI BNTransformContext* BNTransformContextCreateChild(BNTransformContext* context, BNDataBuffer* data, const char* filename);
+	BINARYNINJACOREAPI bool BNTransformContextIsLeaf(BNTransformContext* context);
+	BINARYNINJACOREAPI bool BNTransformContextIsRoot(BNTransformContext* context);
+	BINARYNINJACOREAPI char** BNTransformContextGetAvailableFiles(BNTransformContext* context, size_t* count);
+	BINARYNINJACOREAPI void BNTransformContextSetAvailableFiles(BNTransformContext* context, const char** files, size_t count);
+	BINARYNINJACOREAPI bool BNTransformContextHasAvailableFiles(BNTransformContext* context);
+	BINARYNINJACOREAPI char** BNTransformContextGetRequestedFiles(BNTransformContext* context, size_t* count);
+	BINARYNINJACOREAPI void BNTransformContextSetRequestedFiles(BNTransformContext* context, const char** files, size_t count);
+	BINARYNINJACOREAPI bool BNTransformContextHasRequestedFiles(BNTransformContext* context);
+	BINARYNINJACOREAPI bool BNTransformContextIsDatabase(BNTransformContext* context);
+
+	// Transform Session
+	BINARYNINJACOREAPI BNTransformSession* BNCreateTransformSession(const char* filename);
+	BINARYNINJACOREAPI BNTransformSession* BNCreateTransformSessionWithMode(const char* filename, BNTransformSessionMode mode);
+	BINARYNINJACOREAPI BNTransformSession* BNCreateTransformSessionFromBinaryView(BNBinaryView* initialView);
+	BINARYNINJACOREAPI BNTransformSession* BNCreateTransformSessionFromBinaryViewWithMode(BNBinaryView* initialView, BNTransformSessionMode mode);
+	BINARYNINJACOREAPI BNTransformSession* BNNewTransformSessionReference(BNTransformSession* session);
+	BINARYNINJACOREAPI void BNFreeTransformSession(BNTransformSession* session);
+	BINARYNINJACOREAPI BNBinaryView* BNTransformSessionGetCurrentView(BNTransformSession* session);
+	BINARYNINJACOREAPI BNTransformContext* BNTransformSessionGetRootContext(BNTransformSession* session);
+	BINARYNINJACOREAPI BNTransformContext* BNTransformSessionGetCurrentContext(BNTransformSession* session);
+	BINARYNINJACOREAPI bool BNTransformSessionProcess(BNTransformSession* session);
+	BINARYNINJACOREAPI bool BNTransformSessionHasAnyStages(BNTransformSession* session);
+	BINARYNINJACOREAPI bool BNTransformSessionHasSinglePath(BNTransformSession* session);
+	BINARYNINJACOREAPI BNTransformContext** BNTransformSessionGetSelectedContexts(BNTransformSession* session, size_t* count);
+	BINARYNINJACOREAPI void BNTransformSessionSetSelectedContexts(BNTransformSession* session, BNTransformContext** contexts, size_t count);
+	BINARYNINJACOREAPI bool BNTransformSessionRequiresUserInput(BNTransformSession* session);
+	BINARYNINJACOREAPI bool BNTransformSessionHasMultipleFileChoices(BNTransformSession* session);
+	BINARYNINJACOREAPI char** BNTransformSessionGetAvailableFileChoices(BNTransformSession* session, size_t* count);
+	BINARYNINJACOREAPI bool BNTransformSessionSelectFiles(BNTransformSession* session, const char** files, size_t count);
+	BINARYNINJACOREAPI bool BNTransformSessionProcessWithUserInput(BNTransformSession* session);
 
 	// Architectures
 	BINARYNINJACOREAPI BNArchitecture* BNGetArchitectureByName(const char* name);
@@ -6693,6 +6774,9 @@ extern "C"
 	BINARYNINJACOREAPI BNInstructionTextToken* BNGetTypePointerSuffixTokens(BNType* type, uint8_t baseConfidence, size_t* count);
 	BINARYNINJACOREAPI void BNFreePointerSuffixList(BNPointerSuffix* suffix, size_t count);
 	BINARYNINJACOREAPI bool BNTypeShouldDisplayReturnType(BNType* type);
+	BINARYNINJACOREAPI BNTypeAttribute* BNGetTypeAttributes(BNType* type, size_t* count);
+	BINARYNINJACOREAPI char* BNGetTypeAttributeByName(BNType* type, const char* name);
+	BINARYNINJACOREAPI void BNFreeTypeAttributeList(BNTypeAttribute* attr, size_t count);
 
 	BINARYNINJACOREAPI char* BNGetTypeString(BNType* type, BNPlatform* platform, BNTokenEscapingType escaping);
 	BINARYNINJACOREAPI char* BNGetTypeStringBeforeName(BNType* type, BNPlatform* platform, BNTokenEscapingType escaping);
@@ -6773,6 +6857,11 @@ extern "C"
 	BINARYNINJACOREAPI bool BNTypeBuilderHasTemplateArguments(BNTypeBuilder* type);
 	BINARYNINJACOREAPI void BNSetTypeBuilderNameType(BNTypeBuilder* type, BNNameType nameType);
 	BINARYNINJACOREAPI void BNSetTypeBuilderHasTemplateArguments(BNTypeBuilder* type, bool hasTemplateArguments);
+	BINARYNINJACOREAPI void BNSetTypeBuilderAttribute(BNTypeBuilder* type, const char* name, const char* value);
+	BINARYNINJACOREAPI void BNSetTypeBuilderAttributeList(BNTypeBuilder* type, BNTypeAttribute* attrs, size_t count);
+	BINARYNINJACOREAPI void BNRemoveTypeBuilderAttribute(BNTypeBuilder* type, const char* name);
+	BINARYNINJACOREAPI BNTypeAttribute* BNGetTypeBuilderAttributes(BNTypeBuilder* type, size_t* count);
+	BINARYNINJACOREAPI char* BNGetTypeBuilderAttributeByName(BNTypeBuilder* type, const char* name);
 
 	BINARYNINJACOREAPI char* BNGetTypeBuilderString(BNTypeBuilder* type, BNPlatform* platform);
 	BINARYNINJACOREAPI char* BNGetTypeBuilderStringBeforeName(BNTypeBuilder* type, BNPlatform* platform);
@@ -7609,6 +7698,8 @@ extern "C"
 	    int relocMode, char** outBytes, int* outBytesLen, char** err, int* errLen);
 
 	BINARYNINJACOREAPI void BNLlvmServicesAssembleFree(char* outBytes, char* err);
+	BINARYNINJACOREAPI int BNLlvmServicesDisasmInstruction(const char *triplet, uint8_t *src, int srcLen,
+		uint64_t addr, char *result, size_t resultMaxSize);
 
 	// Filesystem functionality
 	BINARYNINJACOREAPI bool BNDeleteFile(const char* path);

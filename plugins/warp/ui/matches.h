@@ -4,35 +4,33 @@
 
 #include "filter.h"
 #include "render.h"
+#include "shared/fetcher.h"
 #include "shared/function.h"
 
 class WarpCurrentFunctionWidget : public QWidget
 {
-    Q_OBJECT
-    FunctionRef m_current;
+	Q_OBJECT
+	FunctionRef m_current;
 
-    QSplitter *m_splitter;
+	QSplitter* m_splitter;
 
-    WarpFunctionTableWidget *m_tableWidget;
-    WarpFunctionInfoWidget *m_infoWidget;
+	WarpFunctionTableWidget* m_tableWidget;
+	WarpFunctionInfoWidget* m_infoWidget;
 
-    LoggerRef m_logger;
+	LoggerRef m_logger;
 
-    std::mutex m_requestMutex;
-    std::vector<FunctionRef> m_pendingRequests;
-    std::atomic<bool> m_requestInProgress {false};
-    std::unordered_set<uint64_t> m_processedFunctions;
+	std::shared_ptr<WarpFetcher> m_fetcher;
 
 public:
-    explicit WarpCurrentFunctionWidget(FunctionRef current);
+	explicit WarpCurrentFunctionWidget();
 
-    ~WarpCurrentFunctionWidget() override = default;
+	~WarpCurrentFunctionWidget() override = default;
 
-    void SetCurrentFunction(FunctionRef current);
+	void SetFetcher(std::shared_ptr<WarpFetcher> fetcher);
 
-    FunctionRef GetCurrentFunction() { return m_current; };
+	void SetCurrentFunction(FunctionRef current);
 
-    void UpdateMatches();
+	FunctionRef GetCurrentFunction() { return m_current; };
 
-    void ProcessPendingFetchRequests();
+	void UpdateMatches();
 };

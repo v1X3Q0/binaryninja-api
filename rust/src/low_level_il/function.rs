@@ -88,13 +88,17 @@ where
     }
 
     pub(crate) fn arch(&self) -> CoreArchitecture {
+        // TODO: self.function() can return None under rare circumstances
         match self.arch {
-            None => self.function().arch(),
+            None => self.function().unwrap().arch(),
             Some(arch) => arch,
         }
     }
 
-    pub fn instruction_at<L: Into<Location>>(&self, loc: L) -> Option<LowLevelILInstruction<M, F>> {
+    pub fn instruction_at<L: Into<Location>>(
+        &self,
+        loc: L,
+    ) -> Option<LowLevelILInstruction<'_, M, F>> {
         Some(LowLevelILInstruction::new(
             self,
             self.instruction_index_at(loc)?,
@@ -102,7 +106,10 @@ where
     }
 
     /// Get all the instructions for a given location.
-    pub fn instructions_at<L: Into<Location>>(&self, loc: L) -> Vec<LowLevelILInstruction<M, F>> {
+    pub fn instructions_at<L: Into<Location>>(
+        &self,
+        loc: L,
+    ) -> Vec<LowLevelILInstruction<'_, M, F>> {
         let loc = loc.into();
         self.instruction_indexes_at(loc)
             .iter()
@@ -145,7 +152,7 @@ where
     pub fn instruction_from_index(
         &self,
         index: LowLevelInstructionIndex,
-    ) -> Option<LowLevelILInstruction<M, F>> {
+    ) -> Option<LowLevelILInstruction<'_, M, F>> {
         if index.0 >= self.instruction_count() {
             None
         } else {
@@ -167,14 +174,17 @@ where
         }
     }
 
-    pub fn function(&self) -> Ref<Function> {
+    pub fn function(&self) -> Option<Ref<Function>> {
         unsafe {
             let func = BNGetLowLevelILOwnerFunction(self.handle);
-            Function::ref_from_raw(func)
+            if func.is_null() {
+                return None;
+            }
+            Some(Function::ref_from_raw(func))
         }
     }
 
-    pub fn basic_blocks(&self) -> Array<BasicBlock<LowLevelILBlock<M, F>>> {
+    pub fn basic_blocks(&self) -> Array<BasicBlock<LowLevelILBlock<'_, M, F>>> {
         use binaryninjacore_sys::BNGetLowLevelILBasicBlockList;
 
         unsafe {
@@ -191,7 +201,7 @@ where
     pub fn basic_block_containing_index(
         &self,
         index: LowLevelInstructionIndex,
-    ) -> Option<Ref<BasicBlock<LowLevelILBlock<M, F>>>> {
+    ) -> Option<Ref<BasicBlock<LowLevelILBlock<'_, M, F>>>> {
         let block = unsafe { BNGetLowLevelILBasicBlockForInstruction(self.handle, index.0) };
         if block.is_null() {
             None
@@ -255,7 +265,7 @@ impl<M: FunctionMutability> LowLevelILFunction<M, SSA> {
     pub fn get_ssa_register_uses<R: ArchReg>(
         &self,
         reg: LowLevelILSSARegisterKind<R>,
-    ) -> Vec<LowLevelILInstruction<M, SSA>> {
+    ) -> Vec<LowLevelILInstruction<'_, M, SSA>> {
         use binaryninjacore_sys::BNGetLowLevelILSSARegisterUses;
         let register_id = match reg {
             LowLevelILSSARegisterKind::Full { kind, .. } => kind.id(),
@@ -283,7 +293,7 @@ impl<M: FunctionMutability> LowLevelILFunction<M, SSA> {
     pub fn get_ssa_register_definition<R: ArchReg>(
         &self,
         reg: &LowLevelILSSARegisterKind<R>,
-    ) -> Option<LowLevelILInstruction<M, SSA>> {
+    ) -> Option<LowLevelILInstruction<'_, M, SSA>> {
         use binaryninjacore_sys::BNGetLowLevelILSSARegisterDefinition;
         let register_id = match reg {
             LowLevelILSSARegisterKind::Full { kind, .. } => kind.id(),

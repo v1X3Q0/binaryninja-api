@@ -1168,7 +1168,7 @@ class Arm64Architecture : public Architecture
 		Instruction instr;
 		if (!Disassemble(data, addr, len, instr))
 			return false;
-		return IsConditionalBranch(instr);
+		return IsConditionalJump(instr);
 	}
 
 
@@ -1177,7 +1177,7 @@ class Arm64Architecture : public Architecture
 		Instruction instr;
 		if (!Disassemble(data, addr, len, instr))
 			return false;
-		return IsConditionalBranch(instr);
+		return IsConditionalJump(instr);
 	}
 
 
@@ -1230,9 +1230,17 @@ class Arm64Architecture : public Architecture
 			return false;
 
 		uint32_t* value = (uint32_t*)data;
-		// Combine the immediate in the first operand with the unconditional branch opcode to form
-		// an unconditional branch instruction
-		*value = (5 << 26) | (((uint32_t)((instr.operands[0].immediate - addr) >> 2)) & 0x03ffffff);
+		if (IsConditionalBranch(instr))
+		{
+			// Combine the immediate in the first operand with the unconditional branch opcode to form
+			// an unconditional branch instruction
+			*value = (5 << 26) | (((uint32_t)((instr.operands[0].immediate - addr) >> 2)) & 0x03ffffff);
+		}
+		else
+		{
+			// Force to a *BZ, then change the register to zero register (WZR or XZR, determined by bit 31)
+			*value = (*value & ~(1 << 24)) | 0x0f;
+		}
 		return true;
 	}
 
@@ -2684,15 +2692,15 @@ class WindowsArm64SystemCallConvention : public CallingConvention
 	virtual bool IsEligibleForHeuristics() override { return false; }
 };
 
-class MacosArm64SystemCallConvention : public CallingConvention
+class AppleArm64SystemCallConvention : public CallingConvention
 {
  public:
-	MacosArm64SystemCallConvention(Architecture* arch) : CallingConvention(arch, "macos-syscall") {}
+	AppleArm64SystemCallConvention(Architecture* arch) : CallingConvention(arch, "apple-syscall") {}
 
 
 	virtual vector<uint32_t> GetIntegerArgumentRegisters() override
 	{
-		return vector<uint32_t> {REG_X16, REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5};
+		return vector<uint32_t> {REG_X16, REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5, REG_X6, REG_X7, REG_X8};
 	}
 
 
@@ -3490,6 +3498,9 @@ extern "C"
 		arm64->RegisterCallingConvention(conv);
 
 		conv = new WindowsArm64SystemCallConvention(arm64);
+		arm64->RegisterCallingConvention(conv);
+
+		conv = new AppleArm64SystemCallConvention(arm64);
 		arm64->RegisterCallingConvention(conv);
 
 		conv = new AppleArm64CallingConvention(arm64);

@@ -1,8 +1,14 @@
 use crate::container::disk::DiskContainer;
-use crate::container::{Container, ContainerError, ContainerResult, SourceId, SourcePath};
-use std::collections::HashMap;
+use crate::container::{
+    Container, ContainerError, ContainerResult, ContainerSearchQuery, ContainerSearchResponse,
+    SourceId, SourcePath, SourceTag,
+};
+use directories::ProjectDirs;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
+use std::path::PathBuf;
 use warp::chunk::{Chunk, ChunkKind, CompressionType};
+use warp::r#type::chunk::TypeChunk;
 use warp::r#type::guid::TypeGUID;
 use warp::r#type::{ComputedType, Type};
 use warp::signature::chunk::SignatureChunk;
@@ -12,6 +18,7 @@ use warp::{WarpFile, WarpFileHeader};
 
 pub mod client;
 
+use crate::container::ContainerError::CannotCreateSource;
 pub use client::NetworkClient;
 
 /// This is the id on the server for the [`Target`], we can get it via [`NetworkClient::query_target_id`].
@@ -22,23 +29,42 @@ pub struct NetworkContainer {
     /// This is the store that the interface will write to; then we have special functions for pulling
     /// and pushing to the network source.
     cache: DiskContainer,
+    /// Where to place newly created sources.
+    ///
+    /// This is typically a directory inside [`NetworkContainer::root_cache_location`].
+    cache_path: PathBuf,
     /// Populated when targets are queried.
     known_targets: HashMap<Target, Option<NetworkTargetId>>,
-    /// Populated with function sources are queried.
+    /// Populated when function sources are queried.
     known_function_sources: HashMap<FunctionGUID, Vec<SourceId>>,
     /// Populated when user adds function, this is used for writing back to the server.
     added_chunks: HashMap<SourceId, Vec<Chunk<'static>>>,
+    /// Populated when connecting to the server, this is used to determine which sources are writable.
+    ///
+    /// NOTE: This is only populated when logged in, as guest users do not have write permissions.
+    writable_sources: HashSet<SourceId>,
 }
 
 impl NetworkContainer {
-    pub fn new(client: NetworkClient) -> Self {
-        Self {
-            cache: DiskContainer::new("Network Container".to_string(), HashMap::new()),
+    pub fn new(client: NetworkClient, cache_path: PathBuf, writable_sources: &[SourceId]) -> Self {
+        let mut container = Self {
+            cache: DiskContainer::new_from_dir(cache_path.clone()),
+            cache_path,
             client,
             known_targets: HashMap::new(),
             known_function_sources: HashMap::new(),
             added_chunks: HashMap::new(),
+            writable_sources: writable_sources.into_iter().copied().collect(),
+        };
+
+        // TODO: Because of this little hack, methinks we should move writable sources to after the
+        // TODO: container is actually created, but before it is moved into the global container cache.
+        // Probe all writable sources, so the container knows about them properly.
+        for source in writable_sources {
+            container.probe_source(*source);
         }
+
+        container
     }
 
     /// Gets the network id for the `target`, this will be used in later function queries.
@@ -72,6 +98,7 @@ impl NetworkContainer {
     pub fn get_unseen_functions_source(
         &mut self,
         target: Option<&Target>,
+        tags: &[SourceTag],
         guids: &[FunctionGUID],
     ) -> HashMap<SourceId, Vec<FunctionGUID>> {
         let Some(target_id) = target.and_then(|t| self.get_target_id(t)) else {
@@ -82,15 +109,15 @@ impl NetworkContainer {
         // Split guids into known and unknown
         let (_known, unknown): (Vec<_>, Vec<_>) = guids
             .into_iter()
-            .cloned()
+            .copied()
             .partition(|guid| self.known_function_sources.contains_key(guid));
 
         let mut result: HashMap<SourceId, Vec<FunctionGUID>> = HashMap::new();
         // Only query server for unknown guids if we have any.
         if !unknown.is_empty() {
-            if let Some(queried_results) = self
-                .client
-                .query_functions_source(Some(target_id), &unknown)
+            if let Some(queried_results) =
+                self.client
+                    .query_functions_source(Some(target_id), tags, &unknown)
             {
                 // Cache the new results, this means we will not try and contact the server for that guids source.
                 // NOTE: Here we do not just simply list the queried results because we also
@@ -100,7 +127,7 @@ impl NetworkContainer {
                     let sources = queried_results
                         .keys()
                         .filter(|source_id| queried_results[source_id].contains(guid))
-                        .cloned()
+                        .copied()
                         .collect();
                     self.known_function_sources.insert(*guid, sources);
                 }
@@ -139,6 +166,8 @@ impl NetworkContainer {
                 match &chunk.kind {
                     ChunkKind::Signature(sc) => {
                         let functions: Vec<_> = sc.functions().collect();
+                        // Probe the source before attempting to access it, as it might not exist locally.
+                        self.probe_source(*source);
                         match self.cache.add_functions(target, source, &functions) {
                             Ok(_) => log::debug!(
                                 "Added {} functions into cached source '{}'",
@@ -164,7 +193,46 @@ impl NetworkContainer {
     ///
     /// **This is blocking**
     pub fn push_file(&mut self, source_id: SourceId, file: &WarpFile) {
-        self.client.push_file(source_id, file);
+        // TODO: We need a better name for the commit. I would like to derive it automatically from
+        // TODO: something instead of having the user give it TBH.
+        self.client.push_file(source_id, file, "commit");
+    }
+
+    /// Probe the source to make sure it exists in the cache. Retrieving the name from the server.
+    ///
+    /// **This is blocking**
+    pub fn probe_source(&mut self, source_id: SourceId) {
+        if !self.cache.source_path(&source_id).is_ok() {
+            // Add the source to the cache. Using the source id and source name as the source path.
+            match self.client.source_name(source_id) {
+                Ok(source_name) => {
+                    // To prevent two sources with the same name colliding, we add the source id to the source name.
+                    let source_path = self
+                        .cache_path
+                        .join(source_id.to_string())
+                        .join(source_name);
+                    let _ = self.cache.insert_source(source_id, SourcePath(source_path));
+                }
+                Err(e) => {
+                    log::error!("Failed to probe source '{}': {}", source_id, e);
+                }
+            }
+        }
+    }
+
+    pub fn root_cache_location() -> PathBuf {
+        // - Windows: %LOCALAPPDATA%\<org>\<app>\cache
+        // - macOS:   ~/Library/Caches/<org>.<app>
+        // - Linux:   $XDG_CACHE_HOME/<app> or ~/.cache/<app>
+        if let Some(proj_dirs) = ProjectDirs::from("", "Vector35", "Binary Ninja") {
+            proj_dirs.cache_dir().to_path_buf()
+        } else {
+            // Fallback if OS dirs cannot be determined
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(".cache")
+                .join("binaryninja")
+        }
     }
 }
 
@@ -174,9 +242,18 @@ impl Container for NetworkContainer {
     }
 
     fn add_source(&mut self, path: SourcePath) -> ContainerResult<SourceId> {
-        // TODO: How do we want to let users create new sources?
-        log::error!("NetworkContainer::add_source not allowed");
-        Err(ContainerError::CannotCreateSource(path))
+        // Send a **blocking** request to the server to create the source.
+        // NOTE: The user must be logged in for this to work.
+        // TODO: Some better error handling to alert the user that they are not logged in / creating existing sources.
+        let source = self
+            .client
+            .create_source(&path.to_string())
+            .map_err(|_| CannotCreateSource(path))?;
+        // Must probe the source before attempting to access it, as it does not exist locally.
+        self.probe_source(source);
+        // Adding a source inherently makes it writable, so we add it to the set of writable sources.
+        self.writable_sources.insert(source);
+        Ok(source)
     }
 
     fn commit_source(&mut self, source: &SourceId) -> ContainerResult<bool> {
@@ -184,19 +261,24 @@ impl Container for NetworkContainer {
             .added_chunks
             .remove(source)
             .ok_or(ContainerError::SourceNotFound(source.clone()))?;
-        let file = WarpFile::new(WarpFileHeader::new(), chunks);
+        // Because each add operation is its own chunk, we should merge them into larger chunks before sending.
+        let merged_chunks = Chunk::merge(&chunks, CompressionType::Zstd);
+        let file = WarpFile::new(WarpFileHeader::new(), merged_chunks);
         self.push_file(*source, &file);
         Ok(true)
     }
 
     fn is_source_writable(&self, source: &SourceId) -> ContainerResult<bool> {
-        // TODO: This is retrievable from /users/me/sources we will grab it when connecting.
-        log::error!("NetworkContainer::is_source_writable not allowed");
-        Err(ContainerError::SourceNotWritable(source.clone()))
+        // Assume that all writable_sources are also in the cache (through `probe_source`).
+        Ok(self.writable_sources.contains(source))
     }
 
     fn is_source_uncommitted(&self, source: &SourceId) -> ContainerResult<bool> {
         Ok(self.added_chunks.contains_key(source))
+    }
+
+    fn source_tags(&self, source: &SourceId) -> ContainerResult<HashSet<SourceTag>> {
+        self.cache.source_tags(source)
     }
 
     fn source_path(&self, source: &SourceId) -> ContainerResult<SourcePath> {
@@ -208,7 +290,16 @@ impl Container for NetworkContainer {
         source: &SourceId,
         types: &[ComputedType],
     ) -> ContainerResult<()> {
-        self.cache.add_computed_types(source, types)
+        // NOTE: We must `add_computed_types` to the cache before we add the chunk, as `added_chunks` is
+        // not consulted when retrieving types from the cache, if we fail to add the types to
+        // the cache, we will not see them show up in the UI or when matching.
+        self.cache.add_computed_types(source, types)?;
+        let type_chunk = TypeChunk::new_with_computed(types).ok_or(
+            ContainerError::CorruptedData("signature chunk failed to validate"),
+        )?;
+        let chunk = Chunk::new(ChunkKind::Type(type_chunk), CompressionType::None);
+        self.added_chunks.entry(*source).or_default().push(chunk);
+        Ok(())
     }
 
     fn remove_types(&mut self, source: &SourceId, guids: &[TypeGUID]) -> ContainerResult<()> {
@@ -221,6 +312,10 @@ impl Container for NetworkContainer {
         source: &SourceId,
         functions: &[Function],
     ) -> ContainerResult<()> {
+        // NOTE: We must `add_functions` to the cache before we add the chunk, as `added_chunks` is
+        // not consulted when retrieving functions from the cache, if we fail to add the functions to
+        // the cache, we will not see them show up in the UI or when matching.
+        self.cache.add_functions(target, source, functions)?;
         let signature_chunk = SignatureChunk::new(functions).ok_or(
             ContainerError::CorruptedData("signature chunk failed to validate"),
         )?;
@@ -246,10 +341,12 @@ impl Container for NetworkContainer {
     fn fetch_functions(
         &mut self,
         target: &Target,
+        tags: &[SourceTag],
         functions: &[FunctionGUID],
     ) -> ContainerResult<()> {
         // NOTE: Blocking request to get the mapped function sources.
-        let mapped_unseen_functions = self.get_unseen_functions_source(Some(&target), functions);
+        let mapped_unseen_functions =
+            self.get_unseen_functions_source(Some(&target), tags, functions);
 
         // Actually get the function data for the unseen guids, we really only want to do this once per
         // session, anymore, and this is annoying!
@@ -308,16 +405,28 @@ impl Container for NetworkContainer {
     ) -> ContainerResult<Vec<Function>> {
         self.cache.functions_with_guid(target, source, guid)
     }
+
+    fn search(&self, query: &ContainerSearchQuery) -> ContainerResult<ContainerSearchResponse> {
+        // TODO: Give this an actual network error.
+        self.client
+            .search(query)
+            .ok_or(ContainerError::CorruptedData(
+                "search query failed to validate",
+            ))
+    }
 }
 
 impl Debug for NetworkContainer {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NetworkContainer").finish()
+        f.debug_struct("NetworkContainer")
+            .field("client", &self.client)
+            .field("cache_path", &self.cache_path)
+            .finish()
     }
 }
 
 impl Display for NetworkContainer {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NetworkContainer").finish()
+        Display::fmt(&self.client.server_url, f)
     }
 }

@@ -1,4 +1,5 @@
 mod container;
+mod file;
 mod function;
 
 use binaryninjacore_sys::{
@@ -88,6 +89,17 @@ pub unsafe extern "C" fn BNWARPUUIDGetString(uuid: *const Uuid) -> *mut c_char {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn BNWARPUUIDFromString(uuid_str: *mut c_char, uuid: *mut Uuid) -> bool {
+    if let Ok(uuid_str) = std::ffi::CStr::from_ptr(uuid_str).to_str() {
+        if let Some(parsed_uuid) = Uuid::parse_str(uuid_str).ok() {
+            *uuid = parsed_uuid;
+            return true;
+        }
+    }
+    false
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn BNWARPUUIDEqual(a: *const Uuid, b: *const Uuid) -> bool {
     (*a) == (*b)
 }
@@ -142,7 +154,10 @@ pub unsafe extern "C" fn BNWARPIsLiftedInstructionVariant(
         unsafe { LowLevelILFunction::from_raw(analysis_function) };
     match lifted_il.instruction_from_index(index) {
         Some(instr) => {
-            let relocatable_regions = relocatable_regions(&lifted_il.function().view());
+            let Some(owner_function) = lifted_il.function() else {
+                return false;
+            };
+            let relocatable_regions = relocatable_regions(&owner_function.view());
             is_variant_instruction(&relocatable_regions, &instr)
         }
         None => false,
@@ -158,7 +173,10 @@ pub unsafe extern "C" fn BNWARPIsLowLevelInstructionComputedVariant(
         unsafe { LowLevelILFunction::from_raw(analysis_function) };
     match llil.instruction_from_index(index) {
         Some(instr) => {
-            let relocatable_regions = relocatable_regions(&llil.function().view());
+            let Some(owner_function) = llil.function() else {
+                return false;
+            };
+            let relocatable_regions = relocatable_regions(&owner_function.view());
             is_computed_variant_instruction(&relocatable_regions, &instr)
         }
         None => false,
