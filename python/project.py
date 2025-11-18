@@ -193,7 +193,7 @@ class ProjectFile:
 	def get_path_on_disk(self) -> Optional[str]:
 		"""
 		Get this file's path on disk
-		
+
 		:return: The path on disk of the file or None
 		"""
 		return core.BNProjectFileGetPathOnDisk(self._handle)
@@ -202,9 +202,67 @@ class ProjectFile:
 		"""
 		Get this file's path in its parent project
 
-		:return: The path on disk of the file or None
+		:return: The path in the project or None
 		"""
 		return core.BNProjectFileGetPathInProject(self._handle)
+
+	def add_dependency(self, file: 'ProjectFile') -> bool:
+		"""
+		Add a ProjectFile as a dependency of this file
+
+		:return: True on success, False otherwise
+		"""
+		return core.BNProjectFileAddDependency(self._handle, file._handle)
+
+	def remove_dependency(self, file: 'ProjectFile') -> bool:
+		"""
+		Remove a ProjectFile as a dependency of this file
+
+		:return: True on success, False otherwise
+		"""
+		return core.BNProjectFileRemoveDependency(self._handle, file._handle)
+
+	def get_dependencies(self) -> List['ProjectFile']:
+		"""
+		Get the list of files that this file depends on
+
+		:return: List of ProjectFiles that this file depends on
+		"""
+		count = ctypes.c_size_t()
+		value = core.BNProjectFileGetDependencies(self._handle, count)
+		if value is None:
+			raise ProjectException("Failed to get list of project file dependencies")
+		result = []
+		try:
+			for i in range(count.value):
+				file_handle = core.BNNewProjectFileReference(value[i])
+				if file_handle is None:
+					raise ProjectException("core.BNNewProjectFileReference returned None")
+				result.append(ProjectFile(file_handle))
+			return result
+		finally:
+			core.BNFreeProjectFileList(value, count.value)
+
+	def get_required_by(self) -> List['ProjectFile']:
+		"""
+		Get the list of files that depend on this file
+
+		:return: List of ProjectFiles that depend on this file
+		"""
+		count = ctypes.c_size_t()
+		value = core.BNProjectFileGetRequiredBy(self._handle, count)
+		if value is None:
+			raise ProjectException("Failed to get list of project files that depend on file")
+		result = []
+		try:
+			for i in range(count.value):
+				file_handle = core.BNNewProjectFileReference(value[i])
+				if file_handle is None:
+					raise ProjectException("core.BNNewProjectFileReference returned None")
+				result.append(ProjectFile(file_handle))
+			return result
+		finally:
+			core.BNFreeProjectFileList(value, count.value)
 
 
 class ProjectFolder:
@@ -427,13 +485,13 @@ class Project:
 		return core.BNProjectGetName(self._handle) # type: ignore
 
 	@name.setter
-	def name(self, new_name: str):
+	def name(self, new_name: str) -> bool:
 		"""
 		Set the name of the project
 
 		:param new_name: Desired name
 		"""
-		core.BNProjectSetName(self._handle, new_name)
+		return core.BNProjectSetName(self._handle, new_name)
 
 	@property
 	def description(self) -> str:
@@ -445,13 +503,13 @@ class Project:
 		return core.BNProjectGetDescription(self._handle) # type: ignore
 
 	@description.setter
-	def description(self, new_description: str):
+	def description(self, new_description: str) -> bool:
 		"""
 		Set the description of the project
 
 		:param new_description: Desired description
 		"""
-		core.BNProjectSetDescription(self._handle, new_description)
+		return core.BNProjectSetDescription(self._handle, new_description)
 
 	def query_metadata(self, key: str) -> MetadataValueType:
 		"""
@@ -464,7 +522,7 @@ class Project:
 			raise KeyError(key)
 		return Metadata(handle=md_handle).value
 
-	def store_metadata(self, key: str, value: MetadataValueType):
+	def store_metadata(self, key: str, value: MetadataValueType) -> bool:
 		"""
 		Stores metadata within the project
 
@@ -474,15 +532,15 @@ class Project:
 		_val = value
 		if not isinstance(_val, Metadata):
 			_val = Metadata(_val)
-		core.BNProjectStoreMetadata(self._handle, key, _val.handle)
+		return core.BNProjectStoreMetadata(self._handle, key, _val.handle)
 
-	def remove_metadata(self, key: str):
+	def remove_metadata(self, key: str) -> bool:
 		"""
 		Removes the metadata associated with this key from the project
 
 		:param str key: Key associated with the metadata object to remove
 		"""
-		core.BNProjectRemoveMetadata(self._handle, key)
+		return core.BNProjectRemoveMetadata(self._handle, key)
 
 	def create_folder_from_path(self, path: Union[PathLike, str], parent: Optional[ProjectFolder] = None, description: str = "", progress_func: ProgressFuncType = _nop) -> ProjectFolder:
 		"""

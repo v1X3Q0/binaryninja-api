@@ -385,16 +385,26 @@ static void FillOperands32Vle(Instruction* instruction, uint32_t word32, uint64_
 		case PPC_ID_VLE_E_OR2IS:
 		{
 			uint32_t ui5_15 = word32 & 0x7ff;
-			uint32_t ui0_4 = (word32 >> 16) & 0xf;
+			uint32_t ui0_4 = (word32 >> 16) & 0x1f;
 			uint32_t ui = (ui0_4 << 11) | ui5_15;
 
-			PushRA(instruction, word32);
+			PushRD(instruction, word32);
 			if (translate)
 				PushRS(instruction, word32);
 
 			PushUIMMValue(instruction, ui);
 			if ((instruction->id == PPC_ID_VLE_E_AND2I) || (instruction->id == PPC_ID_VLE_E_AND2IS))
 				instruction->flags.rc = true;
+			break;
+		}
+
+		case PPC_ID_VLE_E_LIS:
+		{
+			uint32_t ui5_15 = word32 & 0x7ff;
+			uint32_t ui0_4 = (word32 >> 16) & 0x1f;
+			uint32_t ui = (ui0_4 << 11) | ui5_15;
+			PushRD(instruction, word32);
+			PushUIMMValue(instruction, ui);
 			break;
 		}
 
@@ -621,11 +631,6 @@ static void FillOperands32Vle(Instruction* instruction, uint32_t word32, uint64_
 			PushSIMMValue(instruction, signed_li20);
 			break;
 		}
-
-		case PPC_ID_VLE_E_LIS:
-			PushRD(instruction, word32);
-			PushUIMMValue(instruction, ui_split16);
-			break;
 
 		case PPC_ID_VLE_E_MCRF:
 			PushCRFD(instruction, word32);

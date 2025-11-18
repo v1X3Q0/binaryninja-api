@@ -111,7 +111,9 @@ nav:
         - Migration Guide:
             - 'guide/migration/index.md'
             - Migrating from IDA: 'guide/migration/migrationguideida.md'
-            - Migrating from Ghidra: 'guide/migration/migrationguideghidra.md'
+            - Migrating from Ghidra:
+                - 'guide/migration/ghidra/index.md'
+                - Ghidra Import: 'guide/migration/ghidra/ghidraimport.md'
         - Types:
             - 'guide/types/index.md'
             - Basic Types: 'guide/types/basictypes.md'
@@ -127,6 +129,7 @@ nav:
         - 'dev/index.md'
         - Cookbook: 'dev/cookbook.md'
         - Writing Plugins: 'dev/plugins.md'
+        - Container Transforms: 'dev/containertransforms.md'
         - Automation: 'dev/batch.md'
         - BNIL / Architectures:
             - BNIL Guide&#58; Overview: 'dev/bnil-overview.md'
@@ -140,6 +143,7 @@ nav:
             - Type Libraries: 'dev/typelibraries.md'
         - Important Concepts:
             - 'dev/concepts.md'
+            - Outlining: 'dev/outlining.md'
             - User Informed Data Flow: 'dev/uidf.md'
             - Workflows: 'dev/workflows.md'
         - Creating Themes: 'dev/themes.md'

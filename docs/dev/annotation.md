@@ -114,7 +114,7 @@ Binary Ninja provides a flexible API for creating and defining types explicitly.
 There are a number of different type objects available for creation:
 
 - Integer Types
-- Characters Types (technically an integer)
+- ~~Characters Types (technically an integer)~~ ([just a 1-byte signed integer](https://github.com/Vector35/binaryninja-api/issues/5355))
 - Wide Characters Types (also technically an integer)
 - Boolean (guess what? also technically an integer)
 - Float Types (definitely not an integer)
@@ -236,6 +236,49 @@ Type.structure(members=[(Type.int(4), 'field_0')], type=StructureVariant.ClassSt
 StructureType.create(members=[(Type.int(4), 'field_0')], type=StructureVariant.UnionStructureType)
 StructureType.create(members=[(Type.int(4), 'field_0'), (Type.int(4), 'field_4')], packed=True)
 StructureType.create(members=[(Type.int(4), 'field_0')], type=StructureVariant.ClassStructureType)
+```
+
+#### Create Bitfields in a Structure
+
+To create a bitfield in a structure, you can use the `bit_position` and `bit_width` parameters when inserting a member at an offset.
+
+```pycon
+>>> t = TypeBuilder.structure()
+>>> t.insert(0, Type.int(4), "field_0")
+>>> t.insert(4, Type.int(4), "bitfield_1", bit_width=4)
+>>> t.insert(4, Type.int(4), "bitfield_2", bit_position=4, bit_width=4)
+>>> t.members
+[<int32_t field_0, offset 0x0>, <int32_t bitfield_1, offset 0x4, bit 0:4>, <int32_t bitfield_2, offset 0x4, bit 4:4>]
+```
+
+It is important to note the distinction between the `bit_position` and `offset` parameters. The `offset` is a byte offset
+from the start of the structure, and the `bit_position` is the bit from the start of byte offset the member resides at, `bit_position` **cannot** be greater than `7`. The reason member
+offsets are byte offsets instead of bit offsets is historical, previous versions of Binary Ninja had no concept of bitwise
+structures.
+
+For example, if you have a structure with the following members:
+
+```c
+struct SmallFuncHeader __packed
+{
+    uint32_t offset : 25;
+    uint32_t paramCount : 7;
+    uint32_t bytecodeSizeInBytes : 15;
+    uint32_t functionName : 17;
+};
+```
+
+This can be constructed in Python like so:
+
+```pycon
+>>> t = TypeBuilder.structure(packed=True)
+... t.insert(0, Type.int(4, False), "offset", bit_position=0, bit_width=25)
+... t.insert(3, Type.int(4, False), "paramCount", bit_position=1, bit_width=7)
+... t.insert(4, Type.int(4, False), "bytecodeSizeInBytes", bit_position=0, bit_width=15)
+... t.insert(5, Type.int(4, False), "functionName", bit_position=7, bit_width=17)
+... t.members
+... 
+[<uint32_t offset, offset 0x0, bit 0:25>, <uint32_t paramCount, offset 0x3, bit 1:7>, <uint32_t bytecodeSizeInBytes, offset 0x4, bit 0:15>, <uint32_t functionName, offset 0x5, bit 7:17>]
 ```
 
 #### Create Enumerations

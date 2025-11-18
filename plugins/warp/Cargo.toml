@@ -7,15 +7,18 @@ license = "Apache-2.0"
 [lib]
 crate-type = ["lib", "cdylib"]
 
+[features]
+demo = []
+
 [dependencies]
 binaryninja = { workspace = true, features = ["rayon"] }
 binaryninjacore-sys.workspace = true
-warp = { git = "https://github.com/Vector35/warp/", tag = "1.0.0" }
+warp = { git = "https://github.com/Vector35/warp/", tag = "1.0.1" }
 log = "0.4"
 itertools = "0.14.0"
 dashmap = { version = "6.1", features = ["rayon"]}
 rayon = "1.10"
-arboard = "3.4"
+arboard = {version = "3.4", default-features = false}
 walkdir = "2.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -24,9 +27,10 @@ thiserror = "2.0"
 ar = { git = "https://github.com/mdsteele/rust-ar" }
 tempdir = "0.3.7"
 regex = "1.11"
-reqwest = { version = "0.12", features = ["blocking", "json", "multipart"] }
 directories = "6.0"
 compact_str = { version = "0.9.0", features = ["serde"] }
+base64 = "0.22"
+serde_qs = "0.15"
 
 # For reports
 minijinja = "2.10.2"

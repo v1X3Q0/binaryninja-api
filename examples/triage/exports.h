@@ -74,12 +74,14 @@ class ExportsTreeView : public QTreeView, public FilterTarget
 
   public:
 	ExportsTreeView(ExportsWidget* parent, TriageView* view, BinaryViewRef data);
+	void copySelection();
+	bool canCopySelection() const;
 
 	virtual void setFilter(const std::string& filterText) override;
 	virtual void scrollToFirstItem() override;
 	virtual void scrollToCurrentItem() override;
-	virtual void selectFirstItem() override;
-	virtual void activateFirstItem() override;
+	virtual void ensureSelection() override;
+	virtual void activateSelection() override;
 	virtual void closeFilter() override;
 
   protected:

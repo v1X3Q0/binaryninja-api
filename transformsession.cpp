@@ -41,19 +41,34 @@ TransformSession::~TransformSession()
 
 Ref<BinaryView> TransformSession::GetCurrentView() const
 {
-	return new BinaryView(BNTransformSessionGetCurrentView(m_object));
+	BNBinaryView* view = BNTransformSessionGetCurrentView(m_object);
+	if (!view)
+		return nullptr;
+	return new BinaryView(view);
 }
 
 
 Ref<TransformContext> TransformSession::GetRootContext() const
 {
-	return new TransformContext(BNTransformSessionGetRootContext(m_object));
+	BNTransformContext* context = BNTransformSessionGetRootContext(m_object);
+	if (!context)
+		return nullptr;
+	return new TransformContext(context);
 }
 
 
 Ref<TransformContext> TransformSession::GetCurrentContext() const
 {
-	return new TransformContext(BNTransformSessionGetCurrentContext(m_object));
+	BNTransformContext* context = BNTransformSessionGetCurrentContext(m_object);
+	if (!context)
+		return nullptr;
+	return new TransformContext(context);
+}
+
+
+bool TransformSession::ProcessFrom(Ref<TransformContext> context)
+{
+	return BNTransformSessionProcessFrom(m_object, context->GetObject());
 }
 
 
@@ -97,54 +112,4 @@ void TransformSession::SetSelectedContexts(const vector<Ref<TransformContext>>& 
 
 	BNTransformSessionSetSelectedContexts(m_object, cContexts, contexts.size());
 	delete[] cContexts;
-}
-
-
-bool TransformSession::RequiresUserInput() const
-{
-	return BNTransformSessionRequiresUserInput(m_object);
-}
-
-
-bool TransformSession::HasMultipleFileChoices() const
-{
-	return BNTransformSessionHasMultipleFileChoices(m_object);
-}
-
-
-vector<string> TransformSession::GetAvailableFileChoices() const
-{
-	size_t count;
-	char** files = BNTransformSessionGetAvailableFileChoices(m_object, &count);
-
-	vector<string> result;
-	result.reserve(count);
-
-	for (size_t i = 0; i < count; i++)
-	{
-		result.push_back(files[i]);
-	}
-
-	BNFreeStringList(files, count);
-	return result;
-}
-
-
-bool TransformSession::SelectFiles(const vector<string>& selectedFiles)
-{
-	const char** cFiles = new const char*[selectedFiles.size()];
-	for (size_t i = 0; i < selectedFiles.size(); i++)
-	{
-		cFiles[i] = selectedFiles[i].c_str();
-	}
-
-	bool result = BNTransformSessionSelectFiles(m_object, cFiles, selectedFiles.size());
-	delete[] cFiles;
-	return result;
-}
-
-
-bool TransformSession::ProcessWithUserInput()
-{
-	return BNTransformSessionProcessWithUserInput(m_object);
 }

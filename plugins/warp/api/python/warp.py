@@ -195,6 +195,10 @@ class WarpFunction:
     def apply(self, function: Function):
         warpcore.BNWARPFunctionApply(self.handle, function.handle)
 
+    @staticmethod
+    def remove_matched(function: Function):
+        warpcore.BNWARPFunctionApply(None, function.handle)
+
 
 class WarpContainerSearchQuery:
     def __init__(self, query: str, offset: Optional[int] = None, limit: Optional[int] = None, source: Optional[Source] = None, source_tags: Optional[List[str]] = None):
@@ -345,6 +349,13 @@ class WarpContainer(metaclass=_WarpContainerMetaclass):
             result.append(WarpContainer(warpcore.BNWARPNewContainerReference(containers[i])))
         warpcore.BNWARPFreeContainerList(containers, count.value)
         return result
+
+    @staticmethod
+    def by_name(name: str) -> Optional['WarpContainer']:
+        for container in WarpContainer:
+            if container.name == name:
+                return container
+        return None
 
     @property
     def name(self) -> str:

@@ -611,7 +611,7 @@ bool GetLowLevelILForPPCInstruction(Architecture *arch, LowLevelILFunction &il,
 				ei0 = il.Const(addressSize_l, oper2->simm);
 			ei0 = il.Add(
 				addressSize_l,
-				operToIL(il, oper1, OTI_GPR0_ZERO, PPC_IL_EXTRA_DEFAULT, addressSize_l),
+				operToIL(il, oper1),
 				ei0
 			);
 			ei0 = il.SetRegister(addressSize_l, oper0->reg, ei0);
@@ -660,8 +660,9 @@ bool GetLowLevelILForPPCInstruction(Architecture *arch, LowLevelILFunction &il,
 
 			// VLE instructions that get translated to ANDIx may
 			// not have the rc bit set
-			if (instruction->flags.rc)
-				ei0 = il.SetRegister(addressSize_l, oper0->reg, ei0, IL_FLAGWRITE_CR0_S);
+			ei0 = il.SetRegister(addressSize_l, oper0->reg, ei0,
+				instruction->flags.rc ? IL_FLAGWRITE_CR0_S : 0
+			);
 			il.AddInstruction(ei0);
 			break;
 

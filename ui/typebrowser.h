@@ -438,8 +438,8 @@ public:
 	virtual void setFilter(const std::string& filter) override;
 	virtual void scrollToFirstItem() override;
 	virtual void scrollToCurrentItem() override;
-	virtual void selectFirstItem() override;
-	virtual void activateFirstItem() override;
+	virtual void ensureSelection() override;
+	virtual void activateSelection() override;
 
 	virtual void notifyRefresh() override;
 
@@ -593,6 +593,11 @@ class BINARYNINJAUIAPI TypeBrowserContainer : public QWidget, public ViewContain
 	FilterEdit* m_separateEdit;
 	class TypeBrowserSidebarWidget* m_sidebarWidget;
 	UIActionHandler m_actionHandler;
+
+private:
+	void bindNavigationShortcuts();
+	void navigateBack();
+	void navigateForward();
 
 public:
 	TypeBrowserContainer(BinaryViewRef data, class TypeBrowserSidebarWidget* parent);

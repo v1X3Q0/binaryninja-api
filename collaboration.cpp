@@ -977,6 +977,34 @@ std::vector<std::pair<std::string, std::string>> Remote::SearchUsers(const std::
 }
 
 
+std::vector<Remote::FileSearchMatch> Remote::FindFiles(const std::string& name)
+{
+	size_t count = 0;
+	BNRemoteFileSearchMatch* matches = BNRemoteFindFiles(m_object, name.c_str(), &count);
+	std::vector<FileSearchMatch> results;
+	if (!matches)
+		return results;
+
+	results.reserve(count);
+	for (size_t i = 0; i < count; i++)
+	{
+		FileSearchMatch match;
+		if (matches[i].projectId)
+			match.projectId = matches[i].projectId;
+		if (matches[i].projectName)
+			match.projectName = matches[i].projectName;
+		if (matches[i].fileId)
+			match.fileId = matches[i].fileId;
+		if (matches[i].fileName)
+			match.fileName = matches[i].fileName;
+		results.push_back(std::move(match));
+	}
+
+	BNFreeRemoteFileSearchMatchList(matches, count);
+	return results;
+}
+
+
 void Remote::PullUsers(ProgressFunction progress)
 {
 	ProgressContext pctxt;
@@ -1825,14 +1853,23 @@ void RemoteFile::DeleteSnapshot(const Ref<CollabSnapshot> snapshot)
 }
 
 
-std::vector<uint8_t> RemoteFile::Download(ProgressFunction progress)
+void RemoteFile::Download(ProgressFunction progress)
+{
+	ProgressContext pctxt;
+	pctxt.callback = progress;
+	if (!BNRemoteFileDownload(m_object, ProgressCallback, &pctxt))
+		throw RemoteException("Failed to download file");
+}
+
+
+std::vector<uint8_t> RemoteFile::DownloadContents(ProgressFunction progress)
 {
 	ProgressContext pctxt;
 	pctxt.callback = progress;
 	size_t size = 0;
 	uint8_t* data;
-	if (!BNRemoteFileDownload(m_object, ProgressCallback, &pctxt, &data, &size))
-		throw SyncException("Failed to download file");
+	if (!BNRemoteFileDownloadContents(m_object, ProgressCallback, &pctxt, &data, &size))
+		throw SyncException("Failed to download file contents");
 
 	std::vector<uint8_t> out;
 	out.insert(out.end(), &data[0], &data[size]);
@@ -2677,4 +2714,3 @@ CollabUndoEntry::CollabUndoEntry(BNCollaborationUndoEntry* entry)
 {
 	m_object = entry;
 }
-

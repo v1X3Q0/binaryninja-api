@@ -45,7 +45,7 @@ from . import decorators
 from .enums import (
     AnalysisState, SymbolType, Endianness, ModificationStatus, StringType, SegmentFlag, SectionSemantics, FindFlag,
     TypeClass, BinaryViewEventType, FunctionGraphType, TagReferenceType, TagTypeType, RegisterValueType, DisassemblyOption,
-	RelocationType
+	RelocationType, DerivedStringLocationType
 )
 from .exceptions import RelocationWriteException, ExternalLinkException
 
@@ -82,6 +82,7 @@ from . import typecontainer
 from . import externallibrary
 from . import project
 from . import undo
+from . import stringrecognizer
 
 
 PathType = Union[str, os.PathLike]
@@ -215,6 +216,9 @@ class NotificationType(IntFlag):
 	UndoEntryAdded = 1 << 49
 	UndoEntryTaken = 1 << 50
 	RedoEntryTaken = 1 << 51
+	Rebased = 1 << 52
+	DerivedStringFound = 1 << 53
+	DerivedStringRemoved = 1 << 54
 
 	BinaryDataUpdates = DataWritten | DataInserted | DataRemoved
 	FunctionLifetime = FunctionAdded | FunctionRemoved
@@ -225,7 +229,7 @@ class NotificationType(IntFlag):
 	TagUpdates = TagLifetime | TagUpdated
 	SymbolLifetime = SymbolAdded | SymbolRemoved
 	SymbolUpdates = SymbolLifetime | SymbolUpdated
-	StringUpdates = StringFound | StringRemoved
+	StringUpdates = StringFound | StringRemoved | DerivedStringFound | DerivedStringRemoved
 	TypeLifetime = TypeDefined | TypeUndefined
 	TypeUpdates = TypeLifetime | TypeReferenceChanged | TypeFieldReferenceChanged
 	SegmentLifetime = SegmentAdded | SegmentRemoved
@@ -389,6 +393,12 @@ class BinaryDataNotification:
 	def string_removed(self, view: 'BinaryView', string_type: StringType, offset: int, length: int) -> None:
 		pass
 
+	def derived_string_found(self, view: 'BinaryView', string: 'DerivedString') -> None:
+		pass
+
+	def derived_string_removed(self, view: 'BinaryView', string: 'DerivedString') -> None:
+		pass
+
 	def type_defined(self, view: 'BinaryView', name: '_types.QualifiedName', type: '_types.Type') -> None:
 		pass
 
@@ -467,6 +477,9 @@ class BinaryDataNotification:
 	def redo_entry_taken(self, view: 'BinaryView', entry: 'undo.UndoEntry'):
 		pass
 
+	def rebased(self, old_view: 'BinaryView', new_view: 'BinaryView'):
+		pass
+
 
 class StringReference:
 	_decodings = {
@@ -491,7 +504,7 @@ class StringReference:
 
 	@property
 	def value(self) -> str:
-		return self._view.read(self._start, self._length).decode(self._decodings[self._type])
+		return self._view.read(self._start, self._length).decode(self._decodings[self._type], errors='replace')
 
 	@property
 	def raw(self) -> bytes:
@@ -512,6 +525,145 @@ class StringReference:
 	@property
 	def view(self) -> 'BinaryView':
 		return self._view
+
+
+class StringRef:
+	"""Deduplicated reference to a string owned by the Binary Ninja core. Use `str` or `bytes` to convert
+	this to a standard Python string or sequence of bytes."""
+	def __init__(self, handle):
+		self.handle = core.handle_of_type(handle, core.BNStringRef)
+
+	def __del__(self):
+		if core is not None:
+			core.BNFreeStringRef(self.handle)
+
+	def __bytes__(self):
+		# Do not call the wrapper BNGetStringRefContents here, it will crash as the generator
+		# does not understand that this API gives a direct reference to the string
+		value_ptr = core._BNGetStringRefContents(self.handle)
+		value_len = core.BNGetStringRefSize(self.handle)
+		buf = ctypes.create_string_buffer(value_len)
+		ctypes.memmove(buf, value_ptr, value_len)
+		return bytes(buf.raw)
+
+	def __str__(self):
+		return core.pyNativeStr(bytes(self))
+
+	def __len__(self):
+		return core.BNGetStringRefSize(self.handle)
+
+	def __repr__(self):
+		return repr(str(self))
+
+	def __eq__(self, other):
+		if not isinstance(other, self.__class__):
+			return NotImplemented
+		return bytes(self) == bytes(other)
+
+	def __ne__(self, other):
+		if not isinstance(other, self.__class__):
+			return NotImplemented
+		return not (self == other)
+
+	def __lt__(self, other) -> bool:
+		if not isinstance(other, self.__class__):
+			return NotImplemented
+		return bytes(self) < bytes(self)
+
+	def __gt__(self, other) -> bool:
+		if not isinstance(other, self.__class__):
+			return NotImplemented
+		return bytes(self) > bytes(other)
+
+	def __le__(self, other) -> bool:
+		if not isinstance(other, self.__class__):
+			return NotImplemented
+		return bytes(self) <= bytes(other)
+
+	def __ge__(self, other) -> bool:
+		if not isinstance(other, self.__class__):
+			return NotImplemented
+		return bytes(self) >= bytes(other)
+
+	def __hash__(self):
+		return hash(bytes(self))
+
+
+@dataclass(frozen=True)
+class DerivedStringLocation:
+	"""Location associated with a derived string. Locations are optional."""
+	location_type: 'DerivedStringLocationType'
+	address: int
+	length: int
+
+
+@dataclass(frozen=True)
+class DerivedString:
+	"""
+	Contains a string derived from code or data. The string does not need to be directly present in
+	the binary in its raw form. Derived strings can have optional locations to data or code. When
+	creating new derived strings, a custom type should be registered with
+	:py:func:`~binaryninja.stringrecognizer.CustomStringType.register` on :py:class:`~binaryninja.stringrecognizer.CustomStringType`.
+	"""
+	value: 'StringRef'
+	location: Optional[DerivedStringLocation]
+	custom_type: Optional[stringrecognizer.CustomStringType]
+
+	def __init__(
+		self, value: Union['StringRef', str, bytes, bytearray, 'databuffer.DataBuffer'],
+		location: Optional[DerivedStringLocation], custom_type: Optional[stringrecognizer.CustomStringType]
+	):
+		if isinstance(value, str):
+			value = value.encode("utf-8")
+			value = StringRef(core.BNCreateStringRefOfLength(value, len(value)))
+		elif isinstance(value, bytes):
+			value = StringRef(core.BNCreateStringRefOfLength(value, len(value)))
+		elif isinstance(value, bytearray):
+			value = bytes(value)
+			value = StringRef(core.BNCreateStringRefOfLength(value, len(value)))
+		elif isinstance(value, databuffer.DataBuffer):
+			value = bytes(value)
+			value = StringRef(core.BNCreateStringRefOfLength(value, len(value)))
+		elif not isinstance(value, StringRef):
+			value = str(value).encode("utf-8")
+			value = StringRef(core.BNCreateStringRefOfLength(value, len(value)))
+
+		object.__setattr__(self, "value", value)
+		object.__setattr__(self, "location", location)
+		object.__setattr__(self, "custom_type", custom_type)
+
+	def _to_core_struct(self, owned: bool) -> 'core.BNDerivedString':
+		result = core.BNDerivedString()
+		if owned:
+			result.value = core.BNDuplicateStringRef(self.value.handle)
+		else:
+			result.value = self.value.handle
+		result.locationValid = self.location is not None
+		if result.locationValid:
+			result.location.locationType = self.location.location_type
+			result.location.addr = self.location.address
+			result.location.len = self.location.length
+		if self.custom_type is None:
+			result.customType = None
+		else:
+			result.customType = self.custom_type.handle
+		return result
+
+	@staticmethod
+	def _from_core_struct(obj: 'core.BNDerivedString', owned: bool) -> 'DerivedString':
+		if owned:
+			value = StringRef(obj.value)
+		else:
+			value = StringRef(core.BNDuplicateStringRef(obj.value))
+		if obj.locationValid:
+			location = DerivedStringLocation(DerivedStringLocationType(obj.location.locationType), obj.location.addr, obj.location.len)
+		else:
+			location = None
+		if obj.customType:
+			custom_type = stringrecognizer.CustomStringType(obj.customType)
+		else:
+			custom_type = None
+		return DerivedString(value, location, custom_type)
 
 
 class AnalysisCompletionEvent:
@@ -697,6 +849,8 @@ class BinaryDataNotificationCallbacks:
 			self._cb.symbolUpdated = self._cb.symbolUpdated.__class__(self._symbol_updated)
 			self._cb.stringFound = self._cb.stringFound.__class__(self._string_found)
 			self._cb.stringRemoved = self._cb.stringRemoved.__class__(self._string_removed)
+			self._cb.derivedStringFound = self._cb.derivedStringFound.__class__(self._derived_string_found)
+			self._cb.derivedStringRemoved = self._cb.derivedStringRemoved.__class__(self._derived_string_removed)
 			self._cb.typeDefined = self._cb.typeDefined.__class__(self._type_defined)
 			self._cb.typeUndefined = self._cb.typeUndefined.__class__(self._type_undefined)
 			self._cb.typeReferenceChanged = self._cb.typeReferenceChanged.__class__(self._type_ref_changed)
@@ -725,6 +879,8 @@ class BinaryDataNotificationCallbacks:
 			self._cb.undoEntryAdded = self._cb.undoEntryAdded.__class__(self._undo_entry_added)
 			self._cb.undoEntryTaken = self._cb.undoEntryTaken.__class__(self._undo_entry_taken)
 			self._cb.redoEntryTaken = self._cb.redoEntryTaken.__class__(self._redo_entry_taken)
+
+			self._cb.rebased = self._cb.rebased.__class__(self._rebased)
 		else:
 			if notify.notifications & NotificationType.NotificationBarrier:
 				self._cb.notificationBarrier = self._cb.notificationBarrier.__class__(self._notification_barrier)
@@ -768,6 +924,10 @@ class BinaryDataNotificationCallbacks:
 				self._cb.stringFound = self._cb.stringFound.__class__(self._string_found)
 			if notify.notifications & NotificationType.StringRemoved:
 				self._cb.stringRemoved = self._cb.stringRemoved.__class__(self._string_removed)
+			if notify.notifications & NotificationType.DerivedStringFound:
+				self._cb.derivedStringFound = self._cb.derivedStringFound.__class__(self._derived_string_found)
+			if notify.notifications & NotificationType.DerivedStringRemoved:
+				self._cb.derivedStringRemoved = self._cb.derivedStringRemoved.__class__(self._derived_string_removed)
 			if notify.notifications & NotificationType.TypeDefined:
 				self._cb.typeDefined = self._cb.typeDefined.__class__(self._type_defined)
 			if notify.notifications & NotificationType.TypeUndefined:
@@ -820,6 +980,9 @@ class BinaryDataNotificationCallbacks:
 				self._cb.undoEntryTaken = self._cb.undoEntryTaken.__class__(self._undo_entry_taken)
 			if notify.notifications & NotificationType.RedoEntryTaken:
 				self._cb.redoEntryTaken = self._cb.redoEntryTaken.__class__(self._redo_entry_taken)
+
+			if notify.notifications & NotificationType.Rebased:
+				self._cb.rebased = self._cb.rebased.__class__(self._rebased)
 
 	def _register(self) -> None:
 		core.BNRegisterDataNotification(self._view.handle, self._cb)
@@ -1007,6 +1170,18 @@ class BinaryDataNotificationCallbacks:
 			self._notify.string_removed(self._view, StringType(string_type), offset, length)
 		except:
 			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._string_removed")
+
+	def _derived_string_found(self, ctxt, view: core.BNBinaryView, string) -> None:
+		try:
+			self._notify.derived_string_found(self._view, DerivedString._from_core_struct(string[0], False))
+		except:
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._derived_string_found")
+
+	def _derived_string_removed(self, ctxt, view: core.BNBinaryView, string) -> None:
+		try:
+			self._notify.derived_string_removed(self._view, DerivedString._from_core_struct(string[0], False))
+		except:
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._derived_string_removed")
 
 	def _type_defined(self, ctxt, view: core.BNBinaryView, name: str, type_obj: '_types.Type') -> None:
 		try:
@@ -1237,6 +1412,14 @@ class BinaryDataNotificationCallbacks:
 			self._notify.redo_entry_taken(self._view, py_entry)
 		except:
 			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._redo_entry_taken")
+
+	def _rebased(self, ctxt, old_view: core.BNBinaryView, new_view: core.BNBinaryView):
+		try:
+			file_metadata = filemetadata.FileMetadata(handle=core.BNGetFileForView(new_view))
+			new_view_obj = BinaryView(file_metadata=file_metadata, handle=core.BNNewViewReference(new_view))
+			self._notify.rebased(self._view, new_view_obj)
+		except:
+			log_error_for_exception("Unhandled Python exception in BinaryDataNotificationCallbacks._rebased")
 
 	@property
 	def view(self) -> 'BinaryView':
@@ -2259,12 +2442,20 @@ class AdvancedILFunctionList:
 
 class MemoryMap:
 	r"""
-	The MemoryMap object is used to describe a system level MemoryMap for which a BinaryView is loaded into. A loaded
-	BinaryView has a view into the MemoryMap which is described by the Segments defined in that BinaryView. The MemoryMap
-	object allows for the addition of multiple, arbitrary overlapping regions of memory. Segmenting of the address space is
-	automatically handled when the MemoryMap is modified and in the case where a portion of the system address space has
-	multiple defined regions, the default ordering gives priority to the most recently added region. This feature is
-	experimental and under active development.
+		The MemoryMap object describes a system-level memory map into which a BinaryView is loaded. Each BinaryView
+		exposes its portion of the MemoryMap through the Segments defined within that view.
+
+		A MemoryMap can contain multiple, arbitrarily overlapping memory regions. When modified, address space
+		segmentation is automatically managed. If multiple regions overlap, the most recently added region takes
+		precedence by default.
+
+		All MemoryMap APIs support undo and redo operations. During BinaryView::Init, these APIs should be used conditionally:
+
+		* Initial load: Use the MemoryMap APIs to define the memory regions that compose the system.
+		* Database load: Do not use the MemoryMap APIs, as the regions are already persisted and will be restored automatically.
+
+		This conditional usage prevents redundant operations and ensures database consistency. Using these APIs when loading
+		from a database will also mark the analysis as modified, which is undesirable.
 
 	:Example:
 
@@ -2422,12 +2613,13 @@ class MemoryMap:
 		- **UnbackedMemoryRegion**: Region not backed by any data source (requires `length` to be set).
 
 		The `source` parameter determines the type:
-		- `os.PathLike` or `str`: File path to be loaded into memory as a `DataMemoryRegion`.
-		- `bytes` or `bytearray`: Directly loaded into memory as a `DataMemoryRegion`.
-		- `databuffer.DataBuffer`: Loaded as a `DataMemoryRegion`.
-		- `fileaccessor.FileAccessor`: Remote proxy source.
-		- `BinaryView`: (Reserved for future).
-		- `None`: Creates an unbacked memory region (must specify `length`).
+
+			- `os.PathLike` or `str`: File path to be loaded into memory as a `DataMemoryRegion`.
+			- `bytes` or `bytearray`: Directly loaded into memory as a `DataMemoryRegion`.
+			- `databuffer.DataBuffer`: Loaded as a `DataMemoryRegion`.
+			- `fileaccessor.FileAccessor`: Remote proxy source.
+			- `BinaryView`: (Reserved for future).
+			- `None`: Creates an unbacked memory region (must specify `length`).
 
 		.. note:: If no flags are specified and the new memory region overlaps with one or more existing regions, the overlapping portions of the new region will inherit the flags of the respective underlying regions.
 
@@ -2501,6 +2693,12 @@ class MemoryMap:
 
 	def set_memory_region_fill(self, name: str, fill: int) -> bool:
 		return core.BNSetMemoryRegionFill(self.handle, name, fill)
+
+	def get_memory_region_display_name(self, name: str) -> str:
+		return core.BNGetMemoryRegionDisplayName(self.handle, name)
+
+	def set_memory_region_display_name(self, name: str, display_name: str) -> bool:
+		return core.BNSetMemoryRegionDisplayName(self.handle, name, display_name)
 
 	def is_memory_region_local(self, name: str) -> bool:
 		return core.BNIsMemoryRegionLocal(self.handle, name)
@@ -3385,6 +3583,19 @@ class BinaryView:
 		return self.get_strings()
 
 	@property
+	def derived_strings(self) -> List['DerivedString']:
+		count = ctypes.c_ulonglong(0)
+		strings = core.BNGetDerivedStrings(self.handle, count)
+		assert strings is not None, "core.BNGetDerivedStrings returned None"
+		try:
+			result = []
+			for i in range(0, count.value):
+				result.append(DerivedString._from_core_struct(strings[i], False))
+			return result
+		finally:
+			core.BNFreeDerivedStringList(strings, count.value)
+
+	@property
 	def saved(self) -> bool:
 		"""boolean state of whether or not the file has been saved (read/write)"""
 		return self._file.saved
@@ -3471,7 +3682,10 @@ class BinaryView:
 
 	@property
 	def type_names(self) -> List['_types.QualifiedName']:
-		"""List of defined type names (read-only)"""
+		"""List of defined type names (read-only)
+
+		.. note:: Sort order is not guaranteed in 5.2 and later.
+		"""
 		count = ctypes.c_ulonglong(0)
 		name_list = core.BNGetAnalysisTypeNames(self.handle, count, "")
 		assert name_list is not None, "core.BNGetAnalysisTypeNames returned None"
@@ -3738,11 +3952,11 @@ class BinaryView:
 		Performs "finalization" on segments added after initial Finalization (performed after an Init() has completed).
 
 		Finalizing a segment involves optimizing the relocation info stored in that segment, so if a segment is added
-			and relocations are defined for that segment by some automated process, this function should be called afterwards.
+		and relocations are defined for that segment by some automated process, this function should be called afterwards.
 
 		An example of this can be seen in the KernelCache plugin, in `KernelCache::LoadImageWithInstallName`.
-			After we load an image, map new segments, and define relocations for all of them, we call this function
-			to let core know it is now safe to finalize the new segments
+		After we load an image, map new segments, and define relocations for all of them, we call this function
+		to let core know it is now safe to finalize the new segments
 
 		:return: Whether finalization was successful
 		"""
@@ -4994,10 +5208,11 @@ class BinaryView:
 		analysis to finish before returning.
 
 		**Thread Restrictions**:
-		- **Worker Threads**: This function cannot be called from a worker thread. If called from a worker thread, an error will be
-		logged, and the function will return immediately.
-		- **UI Threads**: This function cannot be called from a UI thread. If called from a UI thread, an error will be logged, and
-		the function will return immediately.
+
+			- **Worker Threads**: This function cannot be called from a worker thread. If called from a worker thread, an error will be
+			  logged, and the function will return immediately.
+			- **UI Threads**: This function cannot be called from a UI thread. If called from a UI thread, an error will be logged, and
+			  the function will return immediately.
 
 		:rtype: None
 		"""
@@ -5797,6 +6012,20 @@ class BinaryView:
 			finally:
 				core.BNFreeTypeReferences(refs, count.value)
 		return result
+
+	def get_derived_string_code_refs(self, str: 'DerivedString', max_items: Optional[int] = None) -> Generator['ReferenceSource', None, None]:
+		count = ctypes.c_ulonglong(0)
+		has_max_items = max_items is not None
+		max_items_value = max_items if has_max_items else 0
+		core_str = str._to_core_struct(False)
+		refs = core.BNGetDerivedStringCodeReferences(self.handle, core_str, count, has_max_items, max_items_value)
+		assert refs is not None, "core.BNGetDerivedStringCodeReferences returned None"
+
+		try:
+			for i in range(0, count.value):
+				yield ReferenceSource._from_core_struct(self, refs[i])
+		finally:
+			core.BNFreeCodeReferences(refs, count.value)
 
 	def add_data_ref(self, from_addr: int, to_addr: int) -> None:
 		"""
@@ -7281,8 +7510,8 @@ class BinaryView:
 		"""
 		Create a new component with an optional name and parent.
 
-		The `parent` argument can be either a Component or the Guid of a component that the created component will be
-			added as a child of
+		The `parent` argument can be either a Component or the Guid of a component to which the created component
+		will be added as a child
 
 		:param name: Optional name to create the component with
 		:param parent: Optional parent to which the component will be added
@@ -7322,7 +7551,7 @@ class BinaryView:
 
 		raise TypeError("Removal is only supported with a Component or string representing its Guid")
 
-	def get_function_parent_components(self, function: 'function.Function') -> List['component.Component']:
+	def get_function_parent_components(self, function: '_function.Function') -> List['component.Component']:
 		_components = []
 		count = ctypes.c_ulonglong(0)
 		bn_components = core.BNGetFunctionParentComponents(self.handle, function.handle, count)
@@ -9407,7 +9636,7 @@ to a the type "tagRECT" found in the typelibrary "winX64common"
 		limit: int = None, progress_callback: Optional[ProgressFuncType] = None, match_callback: Optional[DataMatchCallbackType] = None) -> QueueGenerator:
 		r"""
 		Searches for matches of the specified ``pattern`` within this BinaryView with an optionally provided address range specified by ``start`` and ``end``.
-		The search pattern can be interpreted in various ways:
+		This is the API used by the advanced binary search UI option. The search pattern can be interpreted in various ways:
 
 			- specified as a string of hexadecimal digits where whitespace is ignored, and the '?' character acts as a wildcard
 			- a regular expression suitable for working with bytes

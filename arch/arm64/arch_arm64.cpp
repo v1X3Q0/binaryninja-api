@@ -996,6 +996,10 @@ class Arm64Architecture : public Architecture
 			return "_eret";
 		case ARM64_INTRIN_CLZ:
 			return "_CountLeadingZeros";
+		case ARM64_INTRIN_CNT:
+			return "_PopulationCount";
+		case ARM64_INTRIN_CTZ:
+			return "_CountTrailingZeros";
 		case ARM64_INTRIN_CLREX:
 			return "__clrex";
 		case ARM64_INTRIN_REV:
@@ -1016,6 +1020,8 @@ class Arm64Architecture : public Architecture
 			return "__ldxrb";
 		case ARM64_INTRIN_LDXRH:
 			return "__ldxrh";
+		case ARM64_INTRIN_LDXP:
+			return "__ldxp";
 		case ARM64_INTRIN_LDAXR:
 			return "__ldaxr";
 		case ARM64_INTRIN_LDAXRB:
@@ -1028,6 +1034,8 @@ class Arm64Architecture : public Architecture
 			return "__stxrb";
 		case ARM64_INTRIN_STXRH:
 			return "__stxrh";
+		case ARM64_INTRIN_STXP:
+			return "__stxp";
 		case ARM64_INTRIN_STLXR:
 			return "__stlxr";
 		case ARM64_INTRIN_STLXRB:
@@ -1039,6 +1047,38 @@ class Arm64Architecture : public Architecture
 			return "__tlbi";
 		case ARM64_INTRIN_AT:
 			return "__at";
+		case ARM64_INTRIN_ADDG:
+			return "__addg";
+		case ARM64_INTRIN_CMPP:
+			return "__cmpp";
+		case ARM64_INTRIN_GMI:
+			return "__gmi";
+		case ARM64_INTRIN_IRG:
+			return "__irg";
+		case ARM64_INTRIN_LDG:
+			return "__ldg";
+		case ARM64_INTRIN_LDGM:
+			return "__ldgm";
+		case ARM64_INTRIN_ST2G:
+			return "__st2g";
+		case ARM64_INTRIN_STG:
+			return "__stg";
+		case ARM64_INTRIN_STGM:
+			return "__stgm";
+		case ARM64_INTRIN_STGP:
+			return "__stgp";
+		case ARM64_INTRIN_STZ2G:
+			return "__stz2g";
+		case ARM64_INTRIN_STZG:
+			return "__stzg";
+		case ARM64_INTRIN_STZGM:
+			return "__stzgm";
+		case ARM64_INTRIN_SUBG:
+			return "__subg";
+		case ARM64_INTRIN_SUBP:
+			return "__subp";
+		case ARM64_INTRIN_SUBPS:
+			return "__subps";
 		default:
 			break;
 		}
@@ -1086,6 +1126,8 @@ class Arm64Architecture : public Architecture
 			};
 			break;
 		case ARM64_INTRIN_CLZ:        // reads <Xn>
+		case ARM64_INTRIN_CNT:        // reads <Xn>
+		case ARM64_INTRIN_CTZ:        // reads <Xn>
 		case ARM64_INTRIN_PRFM:
 		case ARM64_INTRIN_REV:   // reads <Xn>
 		case ARM64_INTRIN_RBIT:  // reads <Xn>
@@ -1149,6 +1191,8 @@ class Arm64Architecture : public Architecture
 		case ARM64_INTRIN_XPACD:      // writes <Xd>
 		case ARM64_INTRIN_XPACI:      // writes <Xd>
 		case ARM64_INTRIN_CLZ:        // writes <Xd>
+		case ARM64_INTRIN_CNT:        // writes <Xd>
+		case ARM64_INTRIN_CTZ:        // writes <Xd>
 		case ARM64_INTRIN_REV:        // writes <Xd>
 		case ARM64_INTRIN_RBIT:       // writes <Xd>
 			return {Type::IntegerType(8, false)};

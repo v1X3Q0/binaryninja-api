@@ -117,6 +117,10 @@ public:
 
 class LinearView;
 
+class QHBoxLayout;
+class QVBoxLayout;
+class QResizeEvent;
+
 class StickyHeader: public QWidget
 {
 	RenderContext m_render;
@@ -128,6 +132,11 @@ class StickyHeader: public QWidget
 	LinearViewLine m_line;
 	BinaryNinja::FunctionViewType m_viewType;
 	QProgressIndicator* m_updateIndicator;
+	QHBoxLayout* m_mainLayout = nullptr;
+	QVBoxLayout* m_indicatorLayout = nullptr;
+
+	void updateIndicatorIcon();
+	void updateIndicatorPosition();
 
 public:
 	StickyHeader(BinaryViewRef data, LinearView* parent);
@@ -135,8 +144,10 @@ public:
 	void updateLine(const LinearViewLine& line);
 	void updateViewType(const BinaryNinja::FunctionViewType& viewType);
 	void updateFonts();
+	void updateTheme();
 
 	virtual void paintEvent(QPaintEvent* event) override;
+	virtual void resizeEvent(QResizeEvent* event) override;
 };
 
 
@@ -211,6 +222,10 @@ class BINARYNINJAUIAPI LinearView : public QAbstractScrollArea, public View, pub
 	FunctionRef m_relatedHighlightFunction;
 	std::set<size_t> m_relatedIndexHighlights;
 	std::set<uint64_t> m_relatedInstructionHighlights;
+
+	void updateStickyHeaderLine();
+	void updateStickyHeaderVisibility();
+	bool shouldShowStickyHeader() const;
 
 	SettingsRef m_settings;
 	DisassemblySettingsRef m_options;
@@ -379,6 +394,7 @@ private Q_SLOTS:
 	void makeFloat64();
 	void toggleFloatSize();
 	void makePtr();
+	bool canMakeString(size_t charSize);
 	void makeString(size_t charSize = 1);
 	void changeType(const UIActionContext& context);
 	void undefineInRange();
@@ -490,13 +506,16 @@ public:
 	virtual StatusBarWidget* getStatusBarWidget() override;
 	virtual ViewPaneHeaderSubtypeWidget* getHeaderSubtypeWidget() override;
 	virtual QWidget* getHeaderOptionsWidget() override;
+	virtual void updateTheme() override;
 
 	virtual void followPointer();
 
 	virtual bool canCopyWithTransform() override;
+	virtual bool canCut() override;
 	virtual void cut() override;
 	virtual void copy(TransformRef xform = nullptr) override;
 	virtual void paste(TransformRef xform = nullptr) override;
+	virtual bool canPaste() override;
 	virtual void copyAddress() override;
 
 	virtual HighlightTokenState getHighlightTokenState() override { return m_highlight; }
@@ -577,6 +596,9 @@ protected:
 	bool canExtendSelectionToEndOfSegment();
 	bool canExtendSelectionToStartOfDataVariable();
 	bool canExtendSelectionToEndOfDataVariable();
+
+	virtual bool shouldShowCopyAsActions();
+	virtual bool shouldShowTransformActions();
 };
 
 /*!

@@ -1870,24 +1870,6 @@ namespace BinaryNinja {
 				\return The logger session ID
 			*/
 			size_t GetSessionId();
-
-			/*! Indent the logger's indentation level by one
-			 */
-			void Indent();
-
-			/*! Decrease the logger's indentation level by one
-			 */
-			void Dedent();
-
-			/*! Set the logger's indentation level to zero
-			 */
-			void ResetIndent();
-
-			/*! Get the string to prepend to log messages to indent them
-
-				\return Indentation string
-			 */
-			std::string GetIndent() const;
 	};
 
 	/*! A class allowing registering and retrieving Loggers
@@ -1946,24 +1928,6 @@ namespace BinaryNinja {
 			\return a list of registered logger names
 		*/
 		static std::vector<std::string> GetLoggerNames();
-	};
-
-	/*! RAII helper that indents/dedents a Logger inside a scope
-		\ingroup logging
-	 */
-	class LoggerIndentScope
-	{
-		Ref<Logger> m_logger;
-
-	public:
-		LoggerIndentScope(Ref<Logger> logger): m_logger(logger)
-		{
-			m_logger->Indent();
-		}
-		~LoggerIndentScope()
-		{
-			m_logger->Dedent();
-		}
 	};
 
 	/*!
@@ -3225,46 +3189,45 @@ namespace BinaryNinja {
 		Uses of tokens include plugins that parse the output of an architecture (though parsing IL is recommended),
 	 	or additionally, applying color schemes appropriately.
 
-			========================== ============================================
-			InstructionTextTokenType   Description
-			========================== ============================================
-			AddressDisplayToken        **Not emitted by architectures**
-			AnnotationToken            **Not emitted by architectures**
-			ArgumentNameToken          **Not emitted by architectures**
-			BeginMemoryOperandToken    The start of memory operand
-			CharacterConstantToken     A printable character
-			CodeRelativeAddressToken   **Not emitted by architectures**
-			CodeSymbolToken            **Not emitted by architectures**
-			DataSymbolToken            **Not emitted by architectures**
-			EndMemoryOperandToken      The end of a memory operand
-			ExternalSymbolToken        **Not emitted by architectures**
-			FieldNameToken             **Not emitted by architectures**
-			FloatingPointToken         Floating point number
-			HexDumpByteValueToken      **Not emitted by architectures**
-			HexDumpInvalidByteToken    **Not emitted by architectures**
-			HexDumpSkippedByteToken    **Not emitted by architectures**
-			HexDumpTextToken           **Not emitted by architectures**
-			ImportToken                **Not emitted by architectures**
-			IndirectImportToken        **Not emitted by architectures**
-			InstructionToken           The instruction mnemonic
-			IntegerToken               Integers
-			KeywordToken               **Not emitted by architectures**
-			LocalVariableToken         **Not emitted by architectures**
-			StackVariableToken         **Not emitted by architectures**
-			NameSpaceSeparatorToken    **Not emitted by architectures**
-			NameSpaceToken             **Not emitted by architectures**
-			OpcodeToken                **Not emitted by architectures**
-			OperandSeparatorToken      The comma or delimiter that separates tokens
-			PossibleAddressToken       Integers that are likely addresses
-			RegisterToken              Registers
-			StringToken                **Not emitted by architectures**
-			StructOffsetToken          **Not emitted by architectures**
-			TagToken                   **Not emitted by architectures**
-			TextToken                  Used for anything not of another type.
-			CommentToken               Comments
-			TypeNameToken              **Not emitted by architectures**
-			AddressSeparatorToken      **Not emitted by architectures**
-			========================== ============================================
+			<table>
+			<tr><th>InstructionTextTokenType</th><th>Description</th></tr>
+			<tr><td>AddressDisplayToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>AnnotationToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>ArgumentNameToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>BeginMemoryOperandToken</td><td>The start of memory operand</td></tr>
+			<tr><td>CharacterConstantToken</td><td>A printable character</td></tr>
+			<tr><td>CodeRelativeAddressToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>CodeSymbolToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>DataSymbolToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>EndMemoryOperandToken</td><td>The end of a memory operand</td></tr>
+			<tr><td>ExternalSymbolToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>FieldNameToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>FloatingPointToken</td><td>Floating point number</td></tr>
+			<tr><td>HexDumpByteValueToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>HexDumpInvalidByteToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>HexDumpSkippedByteToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>HexDumpTextToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>ImportToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>IndirectImportToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>InstructionToken</td><td>The instruction mnemonic</td></tr>
+			<tr><td>IntegerToken</td><td>Integers</td></tr>
+			<tr><td>KeywordToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>LocalVariableToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>StackVariableToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>NameSpaceSeparatorToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>NameSpaceToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>OpcodeToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>OperandSeparatorToken</td><td>The comma or delimiter that separates tokens</td></tr>
+			<tr><td>PossibleAddressToken</td><td>Integers that are likely addresses</td></tr>
+			<tr><td>RegisterToken</td><td>Registers</td></tr>
+			<tr><td>StringToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>StructOffsetToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>TagToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>TextToken</td><td>Used for anything not of another type.</td></tr>
+			<tr><td>CommentToken</td><td>Comments</td></tr>
+			<tr><td>TypeNameToken</td><td><b>Not emitted by architectures</b></td></tr>
+			<tr><td>AddressSeparatorToken</td><td><b>Not emitted by architectures</b></td></tr>
+			</table>
 	*/
 	struct InstructionTextToken
 	{
@@ -3640,10 +3603,10 @@ namespace BinaryNinja {
 		std::string GetId() const;
 		std::string GetName() const;
 		std::string GetDescription() const;
-		void SetName(const std::string& name);
-		void SetDescription(const std::string& description);
+		bool SetName(const std::string& name);
+		bool SetDescription(const std::string& description);
 		Ref<ProjectFolder> GetParent() const;
-		void SetParent(Ref<ProjectFolder> parent);
+		bool SetParent(Ref<ProjectFolder> parent);
 		bool Export(const std::string& destination, const ProgressFunction& progressCallback = {}) const;
 	};
 
@@ -3662,13 +3625,17 @@ namespace BinaryNinja {
 		bool ExistsOnDisk() const;
 		std::string GetName() const;
 		std::string GetDescription() const;
-		void SetName(const std::string& name);
-		void SetDescription(const std::string& description);
+		bool SetName(const std::string& name);
+		bool SetDescription(const std::string& description);
 		std::string GetId() const;
 		Ref<ProjectFolder> GetFolder() const;
-		void SetFolder(Ref<ProjectFolder> folder);
+		bool SetFolder(Ref<ProjectFolder> folder);
 		bool Export(const std::string& destination) const;
 		int64_t GetCreationTimestamp() const;
+		bool AddDependency(Ref<ProjectFile> file);
+		bool RemoveDependency(Ref<ProjectFile> file);
+		std::vector<Ref<ProjectFile>> GetDependencies() const;
+		std::vector<Ref<ProjectFile>> GetRequiredBy() const;
 	};
 
 
@@ -3696,13 +3663,13 @@ namespace BinaryNinja {
 		std::string GetPath() const;
 		std::string GetFilePathInProject(const Ref<ProjectFile>& file) const;
 		std::string GetName() const;
-		void SetName(const std::string& name);
+		bool SetName(const std::string& name);
 		std::string GetDescription() const;
-		void SetDescription(const std::string& description);
+		bool SetDescription(const std::string& description);
 
 		Ref<Metadata> QueryMetadata(const std::string& key);
 		bool StoreMetadata(const std::string& key, Ref<Metadata> value);
-		void RemoveMetadata(const std::string& key);
+		bool RemoveMetadata(const std::string& key);
 
 		Ref<ProjectFolder> CreateFolderFromPath(const std::string& path, Ref<ProjectFolder> parent, const std::string& description,
 			const ProgressFunction& progressCallback = {});
@@ -3710,7 +3677,7 @@ namespace BinaryNinja {
 		Ref<ProjectFolder> CreateFolderUnsafe(Ref<ProjectFolder> parent, const std::string& name, const std::string& description, const std::string& id);
 		std::vector<Ref<ProjectFolder>> GetFolders() const;
 		Ref<ProjectFolder> GetFolderById(const std::string& id) const;
-		void PushFolder(Ref<ProjectFolder> folder);
+		bool PushFolder(Ref<ProjectFolder> folder);
 		bool DeleteFolder(Ref<ProjectFolder> folder, const ProgressFunction& progressCallback = {});
 
 		Ref<ProjectFile> CreateFileFromPath(const std::string& path, Ref<ProjectFolder> folder, const std::string& name, const std::string& description, const ProgressFunction& progressCallback = {});
@@ -3721,14 +3688,14 @@ namespace BinaryNinja {
 		Ref<ProjectFile> GetFileById(const std::string& id) const;
 		Ref<ProjectFile> GetFileByPathOnDisk(const std::string& path) const;
 		std::vector<Ref<ProjectFile>> GetFilesByPathInProject(const std::string& path) const;
-		void PushFile(Ref<ProjectFile> file);
+		bool PushFile(Ref<ProjectFile> file);
 		bool DeleteFile_(Ref<ProjectFile> file);
 
 		void RegisterNotification(ProjectNotification* notify);
 		void UnregisterNotification(ProjectNotification* notify);
 
-		void BeginBulkOperation();
-		void EndBulkOperation();
+		bool BeginBulkOperation();
+		bool EndBulkOperation();
 
 		Ref<Collaboration::RemoteProject> GetRemoteProject();
 	};
@@ -4074,6 +4041,7 @@ namespace BinaryNinja {
 	class Segment;
 	class Component;
 	class TypeArchive;
+	struct DerivedString;
 
 	/*!
 
@@ -4107,6 +4075,8 @@ namespace BinaryNinja {
 
 		static void StringFoundCallback(void* ctxt, BNBinaryView* data, BNStringType type, uint64_t offset, size_t len);
 		static void StringRemovedCallback(void* ctxt, BNBinaryView* data, BNStringType type, uint64_t offset, size_t len);
+		static void DerivedStringFoundCallback(void* ctxt, BNBinaryView* data, BNDerivedString* str);
+		static void DerivedStringRemovedCallback(void* ctxt, BNBinaryView* data, BNDerivedString* str);
 		static void TypeDefinedCallback(void* ctxt, BNBinaryView* data, BNQualifiedName* name, BNType* type);
 		static void TypeUndefinedCallback(void* ctxt, BNBinaryView* data, BNQualifiedName* name, BNType* type);
 		static void TypeReferenceChangedCallback(void* ctx, BNBinaryView* data, BNQualifiedName* name, BNType* type);
@@ -4203,6 +4173,8 @@ namespace BinaryNinja {
 			UndoEntryTaken = 1ULL << 50,
 			RedoEntryTaken = 1ULL << 51,
 			Rebased = 1ULL << 52,
+			DerivedStringFound = 1ULL << 53,
+			DerivedStringRemoved = 1ULL << 54,
 
 			BinaryDataUpdates = DataWritten | DataInserted | DataRemoved,
 			FunctionLifetime = FunctionAdded | FunctionRemoved,
@@ -4213,7 +4185,7 @@ namespace BinaryNinja {
 			TagUpdates = TagLifetime | TagUpdated,
 			SymbolLifetime = SymbolAdded | SymbolRemoved,
 			SymbolUpdates = SymbolLifetime | SymbolUpdated,
-			StringUpdates = StringFound | StringRemoved,
+			StringUpdates = StringFound | StringRemoved | DerivedStringFound | DerivedStringRemoved,
 			TypeLifetime = TypeDefined | TypeUndefined,
 			TypeUpdates = TypeLifetime | TypeReferenceChanged | TypeFieldReferenceChanged,
 			SegmentLifetime = SegmentAdded | SegmentRemoved,
@@ -4349,6 +4321,16 @@ namespace BinaryNinja {
 			(void)type;
 			(void)offset;
 			(void)len;
+		}
+		virtual void OnDerivedStringFound(BinaryView* data, const DerivedString& str)
+		{
+			(void)data;
+			(void)str;
+		}
+		virtual void OnDerivedStringRemoved(BinaryView* data, const DerivedString& str)
+		{
+			(void)data;
+			(void)str;
 		}
 		virtual void OnTypeDefined(BinaryView* data, const QualifiedName& name, Type* type)
 		{
@@ -4811,6 +4793,7 @@ namespace BinaryNinja {
 	public:
 		StringRef();
 		explicit StringRef(BNStringRef* ref);
+		StringRef(const std::string& str);
 		StringRef(const StringRef& other);
 		StringRef(StringRef&& other);
 		~StringRef();
@@ -4822,7 +4805,7 @@ namespace BinaryNinja {
 
 		const char* c_str() const;
 		size_t size() const;
-		BNStringRef* GetObject() { return m_ref; }
+		BNStringRef* GetObject() const { return m_ref; }
 
 		bool operator==(const StringRef& other) const { return this->operator std::string_view() == other.operator std::string_view(); }
 		bool operator!=(const StringRef& other) const { return this->operator std::string_view() != other.operator std::string_view(); }
@@ -4853,19 +4836,18 @@ namespace BinaryNinja {
 		/*!
 			Symbols are defined as one of the following types:
 
-				=========================== =================================================================
-				BNSymbolType                Description
-				=========================== =================================================================
-				FunctionSymbol              Symbol for function that exists in the current binary
-				ImportAddressSymbol         Symbol defined in the Import Address Table
-				ImportedFunctionSymbol      Symbol for a function that is not defined in the current binary
-				DataSymbol                  Symbol for data in the current binary
-				ImportedDataSymbol          Symbol for data that is not defined in the current binary
-				ExternalSymbol              Symbols for data and code that reside outside the BinaryView
-				LibraryFunctionSymbol       Symbols for functions identified as belonging to a shared library
-				SymbolicFunctionSymbol      Symbols for functions without a concrete implementation or which have been abstractly represented
-				LocalLabelSymbol            Symbol for a local label in the current binary
-				=========================== =================================================================
+				<table>
+				<tr><th>BNSymbolType</th><th>Description</th></tr>
+				<tr><td>FunctionSymbol</td><td>Symbol for function that exists in the current binary</td></tr>
+				<tr><td>ImportAddressSymbol</td><td>Symbol defined in the Import Address Table</td></tr>
+				<tr><td>ImportedFunctionSymbol</td><td>Symbol for a function that is not defined in the current binary</td></tr>
+				<tr><td>DataSymbol</td><td>Symbol for data in the current binary</td></tr>
+				<tr><td>ImportedDataSymbol</td><td>Symbol for data that is not defined in the current binary</td></tr>
+				<tr><td>ExternalSymbol</td><td>Symbols for data and code that reside outside the BinaryView</td></tr>
+				<tr><td>LibraryFunctionSymbol</td><td>Symbols for functions identified as belonging to a shared library</td></tr>
+				<tr><td>SymbolicFunctionSymbol</td><td>Symbols for functions without a concrete implementation or which have been abstractly represented</td></tr>
+				<tr><td>LocalLabelSymbol</td><td>Symbol for a local label in the current binary</td></tr>
+				</table>
 
 		    \return Symbol type
 		*/
@@ -5354,6 +5336,104 @@ namespace BinaryNinja {
 		std::vector<uint64_t> dataRefsTo;
 		std::vector<uint64_t> dataRefsFrom;
 		std::vector<TypeReferenceSource> typeRefs;
+	};
+
+	/*! Represents a custom string type. String types contain the name of the string type and the prefix
+		and postfix used to render them in code.
+
+		\ingroup stringrecognizer
+	*/
+	class CustomStringType: public StaticCoreRefCountObject<BNCustomStringType>
+	{
+	public:
+		CustomStringType(BNCustomStringType* type);
+		std::string GetName() const;
+		std::string GetStringPrefix() const;
+		std::string GetStringPostfix() const;
+
+		static Ref<CustomStringType> Register(
+			const std::string& name, const std::string& stringPrefix = "", const std::string& stringPostfix = "");
+	};
+
+	/*! Location associated with a derived string. Locations are optional.
+
+		\ingroup stringrecognizer
+	*/
+	struct DerivedStringLocation
+	{
+		BNDerivedStringLocationType locationType;
+		uint64_t addr;
+		uint64_t len;
+
+		bool operator==(const DerivedStringLocation& other) const
+		{
+			if (locationType != other.locationType)
+				return false;
+			if (addr != other.addr)
+				return false;
+			return len == other.len;
+		}
+
+		bool operator!=(const DerivedStringLocation& other) const
+		{
+			return !(*this == other);
+		}
+
+		bool operator<(const DerivedStringLocation& other) const
+		{
+			if (addr < other.addr)
+				return true;
+			if (addr > other.addr)
+				return false;
+			if (len < other.len)
+				return true;
+			if (len > other.len)
+				return false;
+			return locationType < other.locationType;
+		}
+	};
+
+	/*! Contains a string derived from code or data. The string does not need to be directly present in
+		the binary in its raw form. Derived strings can have optional locations to data or code. When
+		creating new derived strings, a custom type should be registered with \c CustomStringType::register.
+
+		\ingroup stringrecognizer
+	*/
+	struct DerivedString
+	{
+		StringRef value;
+		std::optional<DerivedStringLocation> location;
+		Ref<CustomStringType> customType;
+
+		bool operator==(const DerivedString& other) const
+		{
+			if (value != other.value)
+				return false;
+			if (location != other.location)
+				return false;
+			return customType == other.customType;
+		}
+
+		bool operator!=(const DerivedString& other) const
+		{
+			return !(*this == other);
+		}
+
+		bool operator<(const DerivedString& other) const
+		{
+			if (value < other.value)
+				return true;
+			if (other.value < value)
+				return false;
+			if (location < other.location)
+				return true;
+			if (other.location < location)
+				return false;
+			return customType < other.customType;
+		}
+
+		BNDerivedString ToAPIObject(bool owned) const;
+		static DerivedString FromAPIObject(BNDerivedString* str, bool owned);
 	};
 
 	struct QualifiedNameAndType;
@@ -7131,6 +7211,10 @@ namespace BinaryNinja {
 		*/
 		std::vector<BNStringReference> GetStrings(uint64_t start, uint64_t len);
 
+		std::vector<DerivedString> GetDerivedStrings();
+		std::vector<ReferenceSource> GetDerivedStringCodeReferences(
+			const DerivedString& str, std::optional<size_t> maxItems = std::nullopt);
+
 		/*! Sets up a call back function to be called when analysis has been completed.
 
 			This is helpful when using `UpdateAnalysis` which does not wait for analysis completion before returning.
@@ -8136,6 +8220,19 @@ namespace BinaryNinja {
 			return BNSetMemoryRegionFill(m_object, name.c_str(), fill);
 		}
 
+		std::string GetMemoryRegionDisplayName(const std::string& name)
+		{
+			char* displayName = BNGetMemoryRegionDisplayName(m_object, name.c_str());
+			std::string result = displayName;
+			BNFreeString(displayName);
+			return result;
+		}
+
+		bool SetMemoryRegionDisplayName(const std::string& name, const std::string& displayName)
+		{
+			return BNSetMemoryRegionDisplayName(m_object, name.c_str(), displayName.c_str());
+		}
+
 		bool IsMemoryRegionLocal(const std::string& name)
 		{
 			return BNIsMemoryRegionLocal(m_object, name.c_str());
@@ -9040,15 +9137,25 @@ namespace BinaryNinja {
 		TransformContext(BNTransformContext* context);
 		virtual ~TransformContext();
 
-		std::string GetTransformName() const;
-		std::string GetFileName() const;
 		Ref<BinaryView> GetInput() const;
+		std::string GetFileName() const;
+		std::vector<std::string> GetAvailableTransforms() const;
+		std::string GetTransformName() const;
+		void SetTransformName(const std::string& transformName);
+		void SetTransformParameters(const std::map<std::string, DataBuffer>& params);
+		void SetTransformParameter(const std::string& name, const DataBuffer& data);
+		bool HasTransformParameter(const std::string& name) const;
+		void ClearTransformParameter(const std::string& name);
+		std::string GetExtractionMessage() const;
+		BNTransformResult GetExtractionResult() const;
+		BNTransformResult GetTransformResult() const;
+		void SetTransformResult(BNTransformResult result);
 		Ref<Metadata> GetMetadata() const;
 		Ref<TransformContext> GetParent() const;
 		size_t GetChildCount() const;
 		std::vector<Ref<TransformContext>> GetChildren() const;
-		Ref<TransformContext> GetChild(const std::string& filename) const;
-		Ref<TransformContext> CreateChild(const DataBuffer& data, const std::string& filename);
+		Ref<TransformContext> GetChild(const std::string& filename = "") const;
+		Ref<TransformContext> SetChild(const DataBuffer& data, const std::string& filename = "", BNTransformResult result = TransformSuccess, const std::string& message = "");
 		bool IsLeaf() const;
 		bool IsRoot() const;
 		std::vector<std::string> GetAvailableFiles() const;
@@ -9073,19 +9180,13 @@ namespace BinaryNinja {
 		Ref<BinaryView> GetCurrentView() const;
 		Ref<TransformContext> GetRootContext() const;
 		Ref<TransformContext> GetCurrentContext() const;
+		bool ProcessFrom(Ref<TransformContext> context);
 		bool Process();
 		bool HasAnyStages() const;
 		bool HasSinglePath() const;
 
 		std::vector<Ref<TransformContext>> GetSelectedContexts() const;
 		void SetSelectedContexts(const std::vector<Ref<TransformContext>>& contexts);
-
-		// UI interaction support
-		bool RequiresUserInput() const;
-		bool HasMultipleFileChoices() const;
-		std::vector<std::string> GetAvailableFileChoices() const;
-		bool SelectFiles(const std::vector<std::string>& selectedFiles);
-		bool ProcessWithUserInput();
 	};
 
 
@@ -9329,18 +9430,17 @@ namespace BinaryNinja {
 
 			If the instruction is a branch instruction architecture plugins should add a branch of the proper type:
 
-				===================== ===================================================
-				BNBranchType          Description
-				===================== ===================================================
-				UnconditionalBranch   Branch will always be taken
-				FalseBranch           False branch condition
-				TrueBranch            True branch condition
-				CallDestination       Branch is a call instruction (Branch with Link)
-				FunctionReturn        Branch returns from a function
-				SystemCall            System call instruction
-				IndirectBranch        Branch destination is a memory address or register
-				UnresolvedBranch      Branch destination is an unknown address
-				===================== ===================================================
+				<table>
+				<tr><th>BNBranchType</th><th>Description</th></tr>
+				<tr><td>UnconditionalBranch</td><td>Branch will always be taken</td></tr>
+				<tr><td>FalseBranch</td><td>False branch condition</td></tr>
+				<tr><td>TrueBranch</td><td>True branch condition</td></tr>
+				<tr><td>CallDestination</td><td>Branch is a call instruction (Branch with Link)</td></tr>
+				<tr><td>FunctionReturn</td><td>Branch returns from a function</td></tr>
+				<tr><td>SystemCall</td><td>System call instruction</td></tr>
+				<tr><td>IndirectBranch</td><td>Branch destination is a memory address or register</td></tr>
+				<tr><td>UnresolvedBranch</td><td>Branch destination is an unknown address</td></tr>
+				</table>
 
 			\param[in] data pointer to the instruction data to retrieve info for
 		    \param[in] addr address of the instruction data to retrieve info for
@@ -9937,17 +10037,38 @@ namespace BinaryNinja {
 	*/
 	struct Variable : public BNVariable
 	{
-		Variable();
-		Variable(BNVariableSourceType type, uint32_t index, uint64_t storage);
-		Variable(BNVariableSourceType type, uint64_t storage);
-		Variable(const BNVariable& var);
-		Variable(const Variable& var);
+		Variable() : BNVariable{RegisterVariableSourceType, 0, 0} {}
+		Variable(BNVariableSourceType type, uint64_t storage) : Variable(type, 0, storage) {}
+		Variable(BNVariableSourceType type, uint32_t index, uint64_t storage)
+			: BNVariable{type, index, static_cast<int64_t>(storage)}
+		{
+		}
+		Variable(const BNVariable& var) : BNVariable(var) {}
 
-		Variable& operator=(const Variable& var);
+		Variable(const Variable&) = default;
+		Variable& operator=(const Variable&) = default;
 
-		bool operator==(const Variable& var) const;
-		bool operator!=(const Variable& var) const;
-		bool operator<(const Variable& var) const;
+		Variable(Variable&&) = default;
+		Variable& operator=(Variable&&) = default;
+
+		bool operator==(const Variable& var) const
+		{
+			return type == var.type && index == var.index && storage == var.storage;
+		}
+
+		bool operator!=(const Variable& var) const
+		{
+			return !(*this == var);
+		}
+
+		bool operator<(const Variable& var) const
+		{
+			if (type != var.type)
+				return type < var.type;
+			if (storage != var.storage)
+				return storage < var.storage;
+			return index < var.index;
+		}
 
 		uint64_t ToIdentifier() const;
 		static Variable FromIdentifier(uint64_t id);
@@ -10236,6 +10357,11 @@ namespace BinaryNinja {
 		    BNTokenEscapingType escaping = NoTokenEscapingType) const;
 
 		Ref<Type> Duplicate() const;
+
+		/*! Call this with setIgnored=True if this Type object is expected to be always resident.
+		 *  This prevents the type object from showing up in the results of GetMemoryUsageInfo
+		 */
+		Type* SetIgnored(bool setIgnored);
 
 
 		/*! Create a "void" type
@@ -10550,6 +10676,8 @@ namespace BinaryNinja {
 			int paddingCols = 64, bool collapsed = false, BNTokenEscapingType escaping = NoTokenEscapingType) const;
 
 		static std::string GetSizeSuffix(size_t size);
+
+		Ref<Type> DerefNamedTypeReference(BinaryView* view) const;
 	};
 
 	class EnumerationBuilder;
@@ -10779,6 +10907,8 @@ namespace BinaryNinja {
 		uint64_t offset;
 		BNMemberAccess access;
 		BNMemberScope scope;
+		uint8_t bitPosition;
+		uint8_t bitWidth;
 	};
 
 	/*!
@@ -10980,6 +11110,7 @@ namespace BinaryNinja {
 		    \return Whether a StructureMember was successfully retrieved
 		*/
 		bool GetMemberByName(const std::string& name, StructureMember& result) const;
+		// TODO: GetMember at offset also needs to pass a bit position.
 		bool GetMemberAtOffset(int64_t offset, StructureMember& result) const;
 		bool GetMemberAtOffset(int64_t offset, StructureMember& result, size_t& idx) const;
 		uint64_t GetWidth() const;
@@ -11029,10 +11160,26 @@ namespace BinaryNinja {
 		    \param overwriteExisting Whether to overwrite an existing member at that offset, Optional, default true
 		    \param access One of NoAccess, PrivateAccess, ProtectedAccess, PublicAccess
 		    \param scope One of NoScope, StaticScope, VirtualScope, ThunkScope, FriendScope
+			\param bitPosition The number of bits from the start of the `offset` to place this member, used for bitfields
+			\param bitWidth The number of bits wide to make the member, this is analogous to a bitfield width in C
 		    \return Reference to the StructureBuilder
 		*/
 		StructureBuilder& AddMemberAtOffset(const Confidence<Ref<Type>>& type, const std::string& name, uint64_t offset,
-		    bool overwriteExisting = true, BNMemberAccess access = NoAccess, BNMemberScope scope = NoScope);
+		    bool overwriteExisting = true, BNMemberAccess access = NoAccess, BNMemberScope scope = NoScope, uint8_t bitPosition = 0, uint8_t bitWidth = 0);
+
+		/*! AddMemberAtBitOffset adds a member at a specific bit offset within the struct
+
+			\param type Type of the Field
+			\param name Name of the field
+			\param bitOffset Offset, in bits, to add the member within the struct
+			\param bitWidth The number of bits wide to make the member, this is analogous to a bitfield width in C
+			\param overwriteExisting Whether to overwrite an existing member at that offset, Optional, default true
+			\param access One of NoAccess, PrivateAccess, ProtectedAccess, PublicAccess
+			\param scope One of NoScope, StaticScope, VirtualScope, ThunkScope, FriendScope
+			\return Reference to the StructureBuilder
+		*/
+		StructureBuilder& AddMemberAtBitOffset(const Confidence<Ref<Type>>& type, const std::string& name, uint64_t bitOffset,
+			uint8_t bitWidth, bool overwriteExisting = true, BNMemberAccess access = NoAccess, BNMemberScope scope = NoScope);
 
 		/*! RemoveMember removes a member at a specified index
 
@@ -12169,6 +12316,11 @@ namespace BinaryNinja {
 			\return a Symbol reference
 		*/
 		Ref<Symbol> GetSymbol() const;
+
+		/*!
+			\return Whether the function's symbol is globally or weakly bound (treated as exported)
+		*/
+		bool IsExported() const;
 
 		/*! Whether this function was automatically discovered by analysis
 
@@ -15432,6 +15584,10 @@ namespace BinaryNinja {
 		std::set<Variable> GetVariables();
 		std::set<Variable> GetAliasedVariables();
 		std::set<SSAVariable> GetSSAVariables();
+
+		void SetDerivedStringReferenceForExpr(size_t expr, const DerivedString& str);
+		void RemoveDerivedStringReferenceForExpr(size_t expr);
+		std::optional<DerivedString> GetDerivedStringReferenceForExpr(size_t expr);
 	};
 
 	struct LineFormatterSettings
@@ -18354,44 +18510,42 @@ namespace BinaryNinja {
 		levels. The levels and their associated storage are shown in the following table. Default setting values are optional, and if specified,
 		saved in the schema itself.
 
-			================= ========================== ============== ==============================================
-			Setting Level     Settings Scope             Preference     Storage
-			================= ========================== ============== ==============================================
-			Default           SettingsDefaultScope       Lowest         Settings Schema
-			User              SettingsUserScope          -              <User Directory>/settings.json
-			Project           SettingsProjectScope       -              <Project Directory>/settings.json
-			Resource          SettingsResourceScope      Highest        Raw BinaryView (Storage in BNDB)
-			================= ========================== ============== ==============================================
+			<table>
+			<tr><th>Setting Level</th><th>Settings Scope</th><th>Preference</th><th>Storage</th></tr>
+			<tr><td>Default</td><td>SettingsDefaultScope</td><td>Lowest</td><td>Settings Schema</td></tr>
+			<tr><td>User</td><td>SettingsUserScope</td><td>-</td><td><User Directory>/settings.json</td></tr>
+			<tr><td>Project</td><td>SettingsProjectScope</td><td>-</td><td><Project Directory>/settings.json</td></tr>
+			<tr><td>Resource</td><td>SettingsResourceScope</td><td>Highest</td><td>Raw BinaryView (Storage in BNDB)</td></tr>
+			</table>
 
 		Settings are identified by a key, which is a string in the form of <b><tt><group>.<name></tt></b> or <b><tt><group>.<subGroup>.<name></tt></b> . Groups provide
 		a simple way to categorize settings. Sub-groups are optional and multiple sub-groups are allowed. When defining a settings group, the
 		\c RegisterGroup method allows for specifying a UI friendly title for use in the Binary Ninja UI. Defining a new setting requires a
 		unique setting key and a JSON string of property, value pairs. The following table describes the available properties and values.
 
-			==================   ======================================   ==================   ========   =======================================================================
-			Property             JSON Data Type                           Prerequisite         Optional   {Allowed Values} and Notes
-			==================   ======================================   ==================   ========   =======================================================================
-			"title"              string                                   None                 No         Concise Setting Title
-			"type"               string                                   None                 No         {"array", "boolean", "number", "string", "object"}
-			"sorted"             boolean                                  "type" is "array"    Yes        Automatically sort list items (default is false)
-			"isSerialized"       boolean                                  "type" is "string"   Yes        Treat the string as a serialized JSON object
-			"enum"               array : {string}                         "type" is "array"    Yes        Enumeration definitions
-			"enumDescriptions"   array : {string}                         "type" is "array"    Yes        Enumeration descriptions that match "enum" array
-			"minValue"           number                                   "type" is "number"   Yes        Specify 0 to infer unsigned (default is signed)
-			"maxValue"           number                                   "type" is "number"   Yes        Values less than or equal to INT_MAX result in a QSpinBox UI element
-			"precision"          number                                   "type" is "number"   Yes        Specify precision for a QDoubleSpinBox
-			"default"            {array, boolean, number, string, null}   None                 Yes        Specify optimal default value
-			"aliases"            array : {string}                         None                 Yes        Array of deprecated setting key(s)
-			"description"        string                                   None                 No         Detailed setting description
-			"ignore"             array : {string}                         None                 Yes        {"SettingsUserScope", "SettingsProjectScope", "SettingsResourceScope"}
-			"message"            string                                   None                 Yes        An optional message with additional emphasis
-			"readOnly"           bool                                     None                 Yes        Only enforced by UI elements
-			"optional"           bool                                     None                 Yes        Indicates setting can be null
-			"hidden"             bool                                     "type" is "string"   Yes        Indicates the UI should conceal the content. The "ignore" property is required to specify the applicable storage scopes
-			"requiresRestart"    bool                                     None                 Yes        Enable restart notification in the UI upon change
-			"uiSelectionAction"  string                                   "type" is "string"   Yes        {"file", "directory", <Registered UIAction Name>} Informs the UI to add a button to open a selection dialog or run a registered UIAction
-			"quickSettingsGroup" string                                   None                 Yes        Groups related items in the quick settings context menu using dividers to separate groups
-			==================   ======================================   ==================   ========   =======================================================================
+			<table>
+			<tr><th>Property</th><th>JSON Data Type</th><th>Prerequisite</th><th>Optional</th><th>{Allowed Values} and Notes</th></tr>
+			<tr><td>"title"</td><td>string</td><td>None</td><td>No</td><td>Concise Setting Title</td></tr>
+			<tr><td>"type"</td><td>string</td><td>None</td><td>No</td><td>{"array", "boolean", "number", "string", "object"}</td></tr>
+			<tr><td>"sorted"</td><td>boolean</td><td>"type" is "array"</td><td>Yes</td><td>Automatically sort list items (default is false)</td></tr>
+			<tr><td>"isSerialized"</td><td>boolean</td><td>"type" is "string"</td><td>Yes</td><td>Treat the string as a serialized JSON object</td></tr>
+			<tr><td>"enum"</td><td>array : {string}</td><td>"type" is "array"</td><td>Yes</td><td>Enumeration definitions</td></tr>
+			<tr><td>"enumDescriptions"</td><td>array : {string}</td><td>"type" is "array"</td><td>Yes</td><td>Enumeration descriptions that match "enum" array</td></tr>
+			<tr><td>"minValue"</td><td>number</td><td>"type" is "number"</td><td>Yes</td><td>Specify 0 to infer unsigned (default is signed)</td></tr>
+			<tr><td>"maxValue"</td><td>number</td><td>"type" is "number"</td><td>Yes</td><td>Values less than or equal to INT_MAX result in a QSpinBox UI element</td></tr>
+			<tr><td>"precision"</td><td>number</td><td>"type" is "number"</td><td>Yes</td><td>Specify precision for a QDoubleSpinBox</td></tr>
+			<tr><td>"default"</td><td>{array, boolean, number, string, null}</td><td>None</td><td>Yes</td><td>Specify optimal default value</td></tr>
+			<tr><td>"aliases"</td><td>array : {string}</td><td>None</td><td>Yes</td><td>Array of deprecated setting key(s)</td></tr>
+			<tr><td>"description"</td><td>string</td><td>None</td><td>No</td><td>Detailed setting description</td></tr>
+			<tr><td>"ignore"</td><td>array : {string}</td><td>None</td><td>Yes</td><td>{"SettingsUserScope", "SettingsProjectScope", "SettingsResourceScope"}</td></tr>
+			<tr><td>"message"</td><td>string</td><td>None</td><td>Yes</td><td>An optional message with additional emphasis</td></tr>
+			<tr><td>"readOnly"</td><td>bool</td><td>None</td><td>Yes</td><td>Only enforced by UI elements</td></tr>
+			<tr><td>"optional"</td><td>bool</td><td>None</td><td>Yes</td><td>Indicates setting can be null</td></tr>
+			<tr><td>"hidden"</td><td>bool</td><td>"type" is "string"</td><td>Yes</td><td>Indicates the UI should conceal the content. The "ignore" property is required to specify the applicable storage scopes</td></tr>
+			<tr><td>"requiresRestart"</td><td>bool</td><td>None</td><td>Yes</td><td>Enable restart notification in the UI upon change</td></tr>
+			<tr><td>"uiSelectionAction"</td><td>string</td><td>"type" is "string"</td><td>Yes</td><td>{"file", "directory", &lt;Registered UIAction Name&gt;} Informs the UI to add a button to open a selection dialog or run a registered UIAction</td></tr>
+			<tr><td>"quickSettingsGroup"</td><td>string</td><td>None</td><td>Yes</td><td>Groups related items in the quick settings context menu using dividers to separate groups</td></tr>
+			</table>
 
 		\note In order to facilitate deterministic analysis results, settings from the <em><tt>default</tt></em> schema that impact analysis are serialized
 		from Default, User, and Project scope into Resource scope during initial BinaryView analysis. This allows an analysis database to be opened
@@ -20107,7 +20261,7 @@ namespace BinaryNinja {
 		 */
 		std::optional<std::unordered_set<std::string>> GetTypeIds() const;
 
-		/*! Get all type names in a Type Container.
+		/*! Get all type names in a Type Container. Sort order is not guaranteed in 5.2 and later.
 
 			\return List of all type names
 		 */
@@ -20118,6 +20272,12 @@ namespace BinaryNinja {
 			\return Map of type id -> type name
 		 */
 		std::optional<std::unordered_map<std::string, QualifiedName>> GetTypeNamesAndIds() const;
+
+		/*! Get the number of types in a Type Container.
+
+			\return Number of types in the container
+		 */
+		size_t GetTypeCount() const;
 
 		/*! Parse a single type and name from a string containing their definition,
 			with knowledge of the types in the Type Container.
@@ -21263,6 +21423,213 @@ namespace BinaryNinja {
 			std::vector<LinearDisassemblyLine>& lines
 		) override;
 	};
+
+	/*! \c ConstantRenderer allows custom rendering of constants in high level representations.
+
+		\ingroup constantrenderer
+	*/
+	class ConstantRenderer : public StaticCoreRefCountObject<BNConstantRenderer>
+	{
+		std::string m_nameForRegister;
+
+	public:
+		ConstantRenderer(const std::string& name);
+		ConstantRenderer(BNConstantRenderer* renderer);
+
+		std::string GetName() const;
+
+		/*! Determines if the rendering methods should be called for the given expression type. It is optional
+			to override this method. If the method isn't overridden, all expression types are passed to the
+			rendering methods.
+
+		    \param func \c HighLevelILFunction representing the high level function to be queried
+		    \param type Type of the expression
+		    \return \c true if the constant should be passed to the rendering methods, \c false otherwise
+		*/
+		virtual bool IsValidForType(HighLevelILFunction* func, Type* type);
+
+		/*! Can be overridden to render a constant that is not a pointer. The expression type and value of the
+			expression are given. If the expression is not handled by this constant renderer, this method should
+			return \c false
+
+			To render a constant, emit the tokens to the tokens object and return \c true
+
+		    \param instr High level expression
+		    \param type Type of the expression
+		    \param val Value of the expression
+			\param tokens Token emitter for adding the rendered tokens
+			\param settings Settings for rendering
+			\param precedence Operator precedence of the expression
+			\return \c true if the constant was rendered, \c false otherwise
+		*/
+		virtual bool RenderConstant(const HighLevelILInstruction& instr, Type* type, int64_t val,
+			HighLevelILTokenEmitter& tokens, DisassemblySettings* settings, BNOperatorPrecedence precedence);
+
+		/*! Can be overridden to render a constant pointer. The expression type and value of the
+			expression are given. If the expression is not handled by this constant renderer, this method should
+			return \c false
+
+			To render a constant, emit the tokens to the tokens object and return \c true
+
+		    \param instr High level expression
+		    \param type Type of the expression
+		    \param val Value of the expression
+			\param tokens Token emitter for adding the rendered tokens
+			\param settings Settings for rendering
+			\param precedence Operator precedence of the expression
+			\return \c true if the constant was rendered, \c false otherwise
+		*/
+		virtual bool RenderConstantPointer(const HighLevelILInstruction& instr, Type* type, int64_t val,
+			HighLevelILTokenEmitter& tokens, DisassemblySettings* settings, BNSymbolDisplayType symbolDisplay,
+			BNOperatorPrecedence precedence);
+
+		/*! Registers the constant renderer.
+
+		    \param renderer The constant renderer to register.
+		*/
+		static void Register(ConstantRenderer* renderer);
+
+		static Ref<ConstantRenderer> GetByName(const std::string& name);
+		static std::vector<Ref<ConstantRenderer>> GetRenderers();
+
+	private:
+		static bool IsValidForTypeCallback(void* ctxt, BNHighLevelILFunction* hlil, BNType* type);
+		static bool RenderConstantCallback(void* ctxt, BNHighLevelILFunction* hlil, size_t expr, BNType* type,
+			int64_t val, BNHighLevelILTokenEmitter* tokens, BNDisassemblySettings* settings,
+			BNOperatorPrecedence precedence);
+		static bool RenderConstantPointerCallback(void* ctxt, BNHighLevelILFunction* hlil, size_t expr, BNType* type,
+			int64_t val, BNHighLevelILTokenEmitter* tokens, BNDisassemblySettings* settings,
+			BNSymbolDisplayType symbolDisplay, BNOperatorPrecedence precedence);
+	};
+
+	class CoreConstantRenderer : public ConstantRenderer
+	{
+	public:
+		CoreConstantRenderer(BNConstantRenderer* renderer);
+		bool IsValidForType(HighLevelILFunction* func, Type* type) override;
+		bool RenderConstant(const HighLevelILInstruction& instr, Type* type, int64_t val,
+			HighLevelILTokenEmitter& tokens, DisassemblySettings* settings, BNOperatorPrecedence precedence) override;
+		bool RenderConstantPointer(const HighLevelILInstruction& instr, Type* type, int64_t val,
+			HighLevelILTokenEmitter& tokens, DisassemblySettings* settings, BNSymbolDisplayType symbolDisplay,
+			BNOperatorPrecedence precedence) override;
+	};
+
+	/*! \c StringRecognizer recognizes custom strings found in high level expressions.
+
+		\ingroup stringrecognizer
+	*/
+	class StringRecognizer : public StaticCoreRefCountObject<BNStringRecognizer>
+	{
+		std::string m_nameForRegister;
+
+	public:
+		StringRecognizer(const std::string& name);
+		StringRecognizer(BNStringRecognizer* renderer);
+
+		std::string GetName() const;
+
+		/*! Determines if the string recognizer should be called for the given expression type. It is optional
+			to override this method. If the method isn't overridden, all expression types are passed to the
+			string recognizer.
+
+		    \param func \c HighLevelILFunction representing the high level function to be queried
+		    \param type Type of the expression
+		    \return \c true if the expression should be passed to the string recognizer, \c false otherwise
+		*/
+		virtual bool IsValidForType(HighLevelILFunction* func, Type* type);
+
+		/*! Can be overridden to recognize strings for a constant that is not a pointer. The expression type and
+			value of the expression are given. If no string is found for this expression, this method should
+			return \c std::nullopt
+
+			If a string is found, return a \c DerivedString with the string information.
+
+		    \param instr High level expression
+		    \param type Type of the expression
+		    \param val Value of the expression
+		    \return Optional \c DerivedString for any string that is found
+		*/
+		virtual std::optional<DerivedString> RecognizeConstant(
+			const HighLevelILInstruction& instr, Type* type, int64_t val);
+
+		/*! Can be overridden to recognize strings for a constant pointer. The expression type and
+			value of the expression are given. If no string is found for this expression, this method should
+			return \c std::nullopt
+
+			If a string is found, return a \c DerivedString with the string information.
+
+		    \param instr High level expression
+		    \param type Type of the expression
+		    \param val Value of the expression
+		    \return Optional \c DerivedString for any string that is found
+		*/
+		virtual std::optional<DerivedString> RecognizeConstantPointer(
+			const HighLevelILInstruction& instr, Type* type, int64_t val);
+
+		/*! Can be overridden to recognize strings for an external symbol. The expression type and
+			value of the expression are given. If no string is found for this expression, this method should
+			return \c std::nullopt
+
+			If a string is found, return a \c DerivedString with the string information.
+
+		    \param instr High level expression
+		    \param type Type of the expression
+		    \param val Value of the expression
+			\param offset Offset into the external symbol
+		    \return Optional \c DerivedString for any string that is found
+		*/
+		virtual std::optional<DerivedString> RecognizeExternPointer(
+			const HighLevelILInstruction& instr, Type* type, int64_t val, uint64_t offset);
+
+		/*! Can be overridden to recognize strings for an imported symbol. The expression type and
+			value of the expression are given. If no string is found for this expression, this method should
+			return \c std::nullopt
+
+			If a string is found, return a \c DerivedString with the string information.
+
+		    \param instr High level expression
+		    \param type Type of the expression
+		    \param val Value of the expression
+		    \return Optional \c DerivedString for any string that is found
+		*/
+		virtual std::optional<DerivedString> RecognizeImport(
+			const HighLevelILInstruction& instr, Type* type, int64_t val);
+
+		/*! Registers the string recognizer.
+
+		    \param recognizer The string recognizer to register.
+		*/
+		static void Register(StringRecognizer* recognizer);
+
+		static Ref<StringRecognizer> GetByName(const std::string& name);
+		static std::vector<Ref<StringRecognizer>> GetRecognizers();
+
+	private:
+		static bool IsValidForTypeCallback(void* ctxt, BNHighLevelILFunction* hlil, BNType* type);
+		static bool RecognizeConstantCallback(
+			void* ctxt, BNHighLevelILFunction* hlil, size_t expr, BNType* type, int64_t val, BNDerivedString* result);
+		static bool RecognizeConstantPointerCallback(
+			void* ctxt, BNHighLevelILFunction* hlil, size_t expr, BNType* type, int64_t val, BNDerivedString* result);
+		static bool RecognizeExternPointerCallback(void* ctxt, BNHighLevelILFunction* hlil, size_t expr, BNType* type,
+			int64_t val, uint64_t offset, BNDerivedString* result);
+		static bool RecognizeImportCallback(
+			void* ctxt, BNHighLevelILFunction* hlil, size_t expr, BNType* type, int64_t val, BNDerivedString* result);
+	};
+
+	class CoreStringRecognizer : public StringRecognizer
+	{
+	public:
+		CoreStringRecognizer(BNStringRecognizer* recognizer);
+		bool IsValidForType(HighLevelILFunction* func, Type* type) override;
+		std::optional<DerivedString> RecognizeConstant(
+			const HighLevelILInstruction& instr, Type* type, int64_t val) override;
+		std::optional<DerivedString> RecognizeConstantPointer(
+			const HighLevelILInstruction& instr, Type* type, int64_t val) override;
+		std::optional<DerivedString> RecognizeExternPointer(
+			const HighLevelILInstruction& instr, Type* type, int64_t val, uint64_t offset) override;
+		std::optional<DerivedString> RecognizeImport(
+			const HighLevelILInstruction& instr, Type* type, int64_t val) override;
+	};
 }  // namespace BinaryNinja
 
 
@@ -21595,6 +21962,16 @@ namespace BinaryNinja::Collaboration
 		*/
 		std::vector<std::pair<std::string, std::string>> SearchUsers(const std::string& prefix);
 
+		struct FileSearchMatch
+		{
+			std::string projectId;
+			std::string projectName;
+			std::string fileId;
+			std::string fileName;
+		};
+
+		std::vector<FileSearchMatch> FindFiles(const std::string& name);
+
 
 		/*!
 			Pull list of users from the remote. Necessary before calling GetUsers()
@@ -21868,12 +22245,20 @@ namespace BinaryNinja::Collaboration
 		void DeleteSnapshot(const Ref<CollabSnapshot> snapshot);
 
 		/*!
+		    Download a remote file and possibly dependencies to its project
+			Dependency download behavior depends on the value of the collaboration.autoDownloadFileDependencies setting
+		    \param progress Function to call on progress updates
+		    \throws RemoteException If there is an error in any request or if the remote is not connected
+		 */
+		void Download(ProgressFunction progress = DefaultProgressFunction);
+
+		/*!
 		    Download the contents of a remote file
 		    \param progress Function to call on progress updates
 		    \return Contents of the file
 		    \throws RemoteException If there is an error in any request or if the remote is not connected
 		 */
-		std::vector<uint8_t> Download(ProgressFunction progress = {});
+		std::vector<uint8_t> DownloadContents(ProgressFunction progress = {});
 
 		/*!
 		    Get the current user positions for this file
@@ -22479,4 +22864,3 @@ template<> struct fmt::formatter<BinaryNinja::Type>
 		return it;
 	}
 };
-

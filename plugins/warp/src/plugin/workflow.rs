@@ -6,7 +6,7 @@ use crate::cache::{
 use crate::convert::{platform_to_target, to_bn_type};
 use crate::matcher::{Matcher, MatcherSettings};
 use crate::plugin::settings::PluginSettings;
-use crate::{get_warp_tag_type, relocatable_regions};
+use crate::{get_warp_ignore_tag_type, get_warp_tag_type, relocatable_regions, IGNORE_TAG_NAME};
 use binaryninja::architecture::RegisterId;
 use binaryninja::background_task::BackgroundTask;
 use binaryninja::binary_view::{BinaryView, BinaryViewExt};
@@ -19,6 +19,7 @@ use itertools::Itertools;
 use rayon::iter::IntoParallelIterator;
 use rayon::iter::ParallelIterator;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 use warp::r#type::class::function::{Location, RegisterLocation, StackLocation};
 use warp::signature::function::{Function, FunctionGUID};
@@ -62,11 +63,15 @@ struct FunctionSet {
 impl FunctionSet {
     fn from_view(view: &BinaryView) -> Option<Self> {
         let mut set = FunctionSet::default();
+        let is_ignored_func =
+            |f: &BNFunction| !f.function_tags(None, Some(IGNORE_TAG_NAME)).is_empty();
 
         // TODO: Par iter this? Using dashmap
         set.functions_by_target_and_guid = view
             .functions()
             .iter()
+            // Skip functions that have the ignored tag! Otherwise, we will match on them.
+            .filter(|f| !is_ignored_func(f))
             .filter_map(|f| {
                 let guid = try_cached_function_guid(&f)?;
                 let target = platform_to_target(&f.platform());
@@ -110,6 +115,7 @@ pub fn run_matcher(view: &BinaryView) {
     // TODO: Create the tag type so we dont have UB in the apply function workflow.
     let undo_id = view.file().begin_undo_actions(false);
     let _ = get_warp_tag_type(view);
+    let _ = get_warp_ignore_tag_type(view);
     view.file().forget_undo_actions(&undo_id);
 
     // Then we want to actually find matching functions.
@@ -129,6 +135,7 @@ pub fn run_matcher(view: &BinaryView) {
 
     // TODO: Target gets cloned a lot.
     // TODO: Containers might both match on the same function. What should we do?
+    let matched_count = AtomicUsize::new(0);
     for_cached_containers(|container| {
         if background_task.is_cancelled() {
             return;
@@ -175,6 +182,7 @@ pub fn run_matcher(view: &BinaryView) {
                         if let Some(matched_function) =
                             matcher.match_function_from_constraints(function, &matched_functions)
                         {
+                            matched_count.fetch_add(1, Ordering::Relaxed);
                             // We were able to find a match, add it to the match cache and then mark the function
                             // as requiring updates; this is so that we know about it in the applier activity.
                             insert_cached_function_match(function, Some(matched_function.clone()));
@@ -188,7 +196,11 @@ pub fn run_matcher(view: &BinaryView) {
         log::info!("Matcher was cancelled by user, you may run it again by running the 'Run Matcher' command.");
     }
 
-    log::info!("Function matching took {:?}", start.elapsed());
+    log::info!(
+        "Function matching took {:.3} seconds and matched {} functions",
+        start.elapsed().as_secs_f64(),
+        matched_count.load(Ordering::Relaxed)
+    );
     background_task.finish();
 
     // Now we want to trigger re-analysis.

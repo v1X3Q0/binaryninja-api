@@ -71,15 +71,13 @@ Because Linux installation locations can vary widely, we do not assume that Bina
 
 ## Loading Files
 
-![open with options ><](../img/open-with-options.png "Open with Options"){ width="600" }
-
 You can load files in many ways:
 
 1. Drag-and-drop a file onto the Binary Ninja window (hold `[CMD/CTRL-SHIFT]` while dropping to use the `Open with Options` workflow)
 2. Use the `File/Open` menu or `Open` button on the start screen (`[CMD/CTRL] o`)
 3. Use the `File/Open with Options` menu which allows you to customize the analysis options (`[CMD/CTRL-SHIFT] o`)
 4. Open a file from the Triage picker (`File/Open for Triage`) which enables several minimal analysis options and shows a summary view first
-5. Click an item in the recent files list (hold `[CMD/CTRL-SHIFT]` while clicking to use the `Open with Options` workflow)
+5. Click an item in the recent files list (hold `[CMD/CTRL-SHIFT]` while clicking to use the `Open with Options` workflow, or use the right-click menu)
 6. Press the number key associated with an item from the recent files list (0-9, where 0 represents file 10 on the recent list, optionally holding `[CMD/CTRL-SHIFT]` to use the `Open with Options` workflow)
 7. Run Binary Ninja with an optional command-line parameter
 8. Open a file from a URL via the `[CMD/CTRL] l` hotkey
@@ -90,6 +88,87 @@ You can load files in many ways:
         * `binaryninja:///bin/ls?expr=.text+6b` - open the given file and navigate to the hexadecimal offset `6b` from the `.text` section.
     * URLs For referencing remote files either the URL should be prefixed with `binaryninja:` and optionally suffixed with the `expr` query parameter
         * `binaryninja:file://<remote_path>?expr=[.data + 400]` - Download the remote file and navigate to the address at `.data` plus `0x400`
+
+### Opening With Options
+
+![open with options ><](../img/open-with-options.png "Open with Options"){ width="600" }
+
+While Binary Ninja defaults to opening most files with sane defaults without prompting, there are many situations where you wish to specify more details. Additionally, if you are attempting to load a file format without a loader, you will also be presented with the same dialog to specify information such as the base load address and default architecture.
+
+Items 1, 3, 5, 6 in the above list all describe methods you can use to override the default settings and request an "Open with Options" dialog.
+
+### Container Browser
+
+![container browser](../img/container-browser.png "Container Browser"){ width="800" }
+
+The Container Browser provides an interactive way to explore and extract files from container formats such as ZIP archives, encrypted containers, and other nested file structures. When opening files that contain nested content, Binary Ninja can automatically detect and decode these containers, presenting a hierarchical tree view of all available files.
+
+Binary Ninja includes built-in support for the following container formats:
+
+- **Zip**: ZIP archives (including password-protected)
+- **Gzip**: Gzip compressed files
+- **Zlib**: Zlib compressed data
+- **CaRT**: Custom archive format for malware analysis with metadata support
+- **IntelHex**: Intel HEX format files
+- **SRec**: Motorola S-record format files
+- **TiTxt**: Texas Instruments TXT format
+- **IMG4**: Apple IMG4 container format
+- **LZFSE**: Apple LZFSE compressed data
+
+#### Container Detection Modes
+
+Binary Ninja offers three container detection modes, configurable via the [`files.container.mode`](settings.md#files.container.mode) setting:
+
+- **Full** (default): Automatically discovers all nested paths and builds a complete context tree before requesting user selection. This mode provides the most complete view of the container structure upfront.
+- **Interactive**: Requires user interaction at each level of the container hierarchy. This mode is useful when working with deeply nested containers or when you want more control over the extraction process.
+- **Disabled**: Opens the file as-is without attempting to unwrap container formats.
+
+#### Working with Containers
+
+When you open a container file in Full or Interactive mode, the Container Browser dialog displays:
+
+- **Name**: The file or entry name within the container
+- **Type**: The detected format
+- **Size**: File size in bytes
+- **Path**: The hierarchical path within the container structure
+
+The browser supports:
+
+- **Filtering**: Use the search box at the top to filter by name, type, or path
+- **Password Protection**: Binary Ninja will attempt common passwords (configurable via [`files.container.defaultPasswords`](settings.md#files.container.defaultPasswords)) before prompting for manual entry
+- **Custom Extraction**: Right-click any entry to access "Extract With" options, allowing you to apply different transforms (Base64, Hex, etc.) to decode content
+- **Metadata Display**: For containers that include embedded metadata, the associated information is displayed in the preview pane on the right.
+
+#### Virtual Paths
+
+Files opened through the Container Browser maintain a virtual path that tracks the full extraction chain. For example:
+
+```python
+>>> bv.file.virtual_path
+'Zip(.../papi_b64.zip)::Base64(papi_b64)::extracted'
+```
+
+This virtual path is also stored in the file's metadata for the 'Raw' BinaryView and can be accessed programmatically:
+
+```python
+>>> bv.parent_view.auto_metadata['container']
+{'chain': [{'transform': 'Zip'}, {'transform': 'Base64'}], 'virtualPath': 'Zip(.../papi_b64.zip)::Base64(papi_b64)::extracted'}
+```
+
+???+ Note "Note"
+     The virtual path and associated metadata are not persisted when saving to a database (`.bndb` file). Additionally, the format of the virtual path string may change in future releases.
+
+#### Settings
+
+The following settings control Container Browser behavior:
+
+- [`files.container.mode`](settings.md#files.container.mode): Controls container detection mode (Full/Interactive/Disabled)
+- [`files.container.autoOpen`](settings.md#files.container.autoOpen): Automatically opens files when there is exactly one extraction path with no required input
+- [`files.container.defaultPasswords`](settings.md#files.container.defaultPasswords): List of passwords to attempt for encrypted containers
+
+#### Adding Custom Container Support
+
+Binary Ninja's container system is extensible through the Transform API. Developers can create custom container decoders for proprietary or specialized formats. For information on implementing custom container transforms, see the [Container Transforms developer guide](../dev/containertransforms.md).
 
 ## Saving Files
 
@@ -334,6 +413,13 @@ The Mini Graph only shows content when the currently selected main pane contains
 
 The Cross References view in the lower-left section of the sidebar shows all cross-references to the currently selected address, address range, variable or type. This pane will change depending on whether an entire line is selected (all cross-references to that address/type/variable are shown), or whether a specific token within the line is selected. For instance if you click on the symbol `memmove` in `call memmove` it will display all known cross-references to `memmove`, whereas if you click on the line the `call` instruction is on, you will only get cross-references to the address of the call instruction. Cross-references can be either incoming or outgoing, and they can be either data, code, type, or variable.
 
+When using the `X` hotkey, a [pinned cross-reference](#cross-reference-pinning) tab will be opened and the "Pinned Cross References" panel will be focused. [Some users](migrationguideida.md) may prefer a modal dialog, or the original Binary Ninja behavior of focusing the dynamic cross-reference window. This behavior can be changed either by adjusting the [ui.defaultXrefInterface](settings.md#ui.defaultXrefInterface) setting to `pinned`, `sidebar`, or `dialog` setting, OR by [changing the keybinding](#custom-hotkeys) for the appropriate command palette action:
+
+- `Focus Cross References`
+- `Pin Cross References` (opens a new tab in the existing Pinned Cross References dialog)
+- `Pin Cross References to New Pane`
+- `Cross References Dialog...`
+
 ![Cross References](../img/cross-reference-tree.png "xrefs"){ width="600" }
 
 #### Code References
@@ -346,7 +432,7 @@ Data References are references created _by_ data (i.e. pointers), not necessaril
 
 #### Variable References
 
-Variable References are all the set of uses of a given variable. As these references are intraprocedural we're able to show the currently viewed IL in the preview.
+Variable References are all the set of uses of a given variable. As these references are intra-procedural we're able to show the currently viewed IL in the preview.
 
 #### Type References
 
@@ -371,17 +457,19 @@ The first of the two drop down boxes allows the selection of incoming, outgoing,
 
 ![xrefs](../img/cross-reference-panel-pin.png "xrefs panel pin"){ width="600" }
 
-By default, Binary Ninja's cross-reference pane is dynamic, allowing quick navigation to relevant references. Sometimes you might rather have the current references stick around, so they can be used as a sort of work-list. This workflow is supported in four different ways. First is the `Pin` checkbox (which is only visible if the `Filter` drop-down is open). This prevents the list of cross-references from being updated even after the current selection is changed.
+By default, Binary Ninja's cross-reference pane is dynamic, allowing quick navigation to relevant references. Sometimes you might rather have the current references stick around, so they can be used as a sort of work-list. This workflow is supported in many different ways. 
 
-Alternatively clicking the `Pin Cross References to New Pane` button at the top right of the cross references pane in the sidebar, selecting `Pin Cross References` in the context menu or command palette, or using the `SHIFT+X` shortcut pops up a `Pinned Cross References` pane. This pane has a static address range which can only be updated through the `Pin Cross References` action. The third way would be to select (or multi-select in table view) a set of cross-references then right-click `Tag Selected Rows`. The tag pane can then be used to navigate those references. Tags allow for persistent lists to be saved to an analysis database whereas the other options only last for the current session.
+1. First is the `Pin` checkbox (which is only visible if the `Filter` drop-down is open). This prevents the list of cross-references from being updated even after the current selection is changed.
+1. Second, you can clicking the `Pin Cross References to New Pane` button at the top right of the cross references pane in the sidebar.
+1. Third, you can use the `X` hotkey or select `Pin Cross References` in the context menu or command palette. 
+1. The final way is to select (or multi-select in table view) a set of cross-references then right-click `Tag Selected Rows`. The tag pane can then be used to navigate those references. Tags allow for persistent lists to be saved to an analysis database whereas the other options only last for the current session.
 
 ???+ Tip "Tip"
-    The dynamic cross-reference pane limits the number of references that are displayed at one time to keep the user interface responsive. If the list of references is not complete, a `+` will appear next to the count of references. Clicking the `Pin Cross References to New Pane` button will increase the limit substantially and allow you to see the missing references. The limits for both the dynamic pane and the pinned references can be controlled in the settings.
+    The dynamic cross-reference pane limits the number of references that are displayed at one time to keep the user interface responsive. If the list of references is not complete, a `+` will appear next to the count of references. Clicking the `Pin Cross References to New Pane` button will increase the limit substantially and allow you to see the missing references. The limits for both the dynamic pane and the pinned references can be controlled in [settings](settings.md#ui.maxXrefItems).
 
 #### Cross-Reference Hotkeys
 
-* `x` - Focus the cross-references pane
-* `[SHIFT] x` Create a new pinned cross-references pane
+* `x` - Create a new pinned cross-references pane
 * `[OPTION/ALT] x` - Navigate to the next cross-reference
 * `[OPTION/ALT-SHIFT] x` - Navigate to the previous cross-reference
 
@@ -446,7 +534,7 @@ The normal find dialog also exists as a sidebar panel that allows persistent, ta
 
 The search types are available from a drop-down next to the text input field and include:
 
- - Advanced Binary Search: A new search type using the [bv.search](https://dev-api.binary.ninja/binaryninja.binaryview-module.html#binaryninja.binaryview.BinaryView.search) syntax (supporting regular expressions and wildcard hex strings)
+ - Advanced Binary Search: A new search type using the [bv.search](https://api.binary.ninja/binaryninja.binaryview-module.html#binaryninja.binaryview.BinaryView.search) syntax (supporting regular expressions and wildcard hex strings)
  - Escaped: Escaped strings such as `OneString\x09\Tabsx09Another`
  - Hex: All values much be valid hex characters such as `ebfffc390` and the bytes will only be searched for in this particular order
  - Raw: A simple string search that matches the exact string as specified
@@ -1058,6 +1146,9 @@ When you launch Binary Ninja from the command-line, you can control whether a ne
     3. Open those files in a new instance of Binary Ninja.
 * Passing the `-n` or `--new-instance` command line argument will cause a new Binary Ninja application to be launched and any files or URLs on the command line will be opened in the new instance.
 
+???+ Danger "Warning"
+    Due to [bug](https://github.com/Vector35/binaryninja-api/issues/7523) on macOS, the above behavior is only correct for Windows and Linux. On macOS, the default behavior is to always launch a new window.
+
 ## Debugger
 
 Binary Ninja now comes with a debugger plugin that can debug executables on Windows, Linux, and macOS.
@@ -1074,7 +1165,6 @@ Updates are silently downloaded in the background and when complete an option to
 
 On Windows, this is achieved through a separate launcher that loads first and replaces the installation before launching the new version which you'll notice as a separate window. On macOS and Linux, the original installation is overwritten after the update occurs as these operating systems allow files to be replaced while running. The update on restart is thus immediate.
 
-Note
 ???+ Tip "Tip"
     If you have any trouble with the self-updater, you can always [request](https://binary.ninja/recover/) a fresh set of download links as long as you are under active support.
 
